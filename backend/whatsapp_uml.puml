@@ -1,0 +1,87 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+'=========================
+' Entities
+'=========================
+class User {
+  Long id
+  String username
+  String passwordHash
+  DateTime createdAt
+}
+
+class GroupChat {
+  Long id
+  String title
+  Long userId
+  int participantsCount
+  DateTime createdAt
+}
+
+class ChatMetrics {
+  Long id
+  Long groupChatId
+  int totalMessages
+  Map<String,int> messagesPerSender
+  List<String> topWords
+  Map<String,int> emojiCounts
+  List<int> hourlyActivity
+  List<int> dailyActivity
+  Map<String,float> sentimentScores
+  DateTime updatedAt
+}
+
+class ChatArchive {
+  Long id
+  Long groupChatId
+  String fileName
+  String filePath
+  DateTime uploadedAt
+}
+
+' Relationships
+User "1" --> "*" GroupChat
+GroupChat "1" --> "*" ChatMetrics
+GroupChat "1" --> "0..1" ChatArchive
+
+'=========================
+' Services
+'=========================
+class AuthService {
+  +register(username, password): User
+  +login(username, password): JWT
+  +verifyToken(token): Boolean
+}
+
+class MetricsService {
+  +uploadMetrics(chatMetrics: ChatMetrics): void
+  +getMetrics(chatId: Long, userId: Long): ChatMetrics
+  +compareMetrics(chatIds: List<Long>, userId: Long): List<ChatMetrics>
+}
+
+class ArchiveService {
+  +uploadArchive(chatArchive: ChatArchive): void
+  +downloadArchive(chatId: Long, userId: Long): File
+}
+
+' Relationships: Services operate on entities
+AuthService ..> User
+MetricsService ..> ChatMetrics
+ArchiveService ..> ChatArchive
+
+'=========================
+' Client-side module
+'=========================
+class ClientParserModule {
+  +selectZIP(file): void
+  +parseZIP(): ChatMetrics
+  +computeMetrics(): ChatMetrics
+  +sendMetricsToBackend(chatMetrics: ChatMetrics, groupChatId: Long)
+  +uploadZIP(file: File, groupChatId: Long)
+}
+
+ClientParserModule ..> ChatMetrics
+
+
+@enduml
