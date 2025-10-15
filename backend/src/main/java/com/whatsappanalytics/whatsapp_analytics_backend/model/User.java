@@ -1,6 +1,8 @@
 package com.whatsappanalytics.whatsapp_analytics_backend.model;
 
 
+import java.time.LocalDateTime;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GenerationType;
@@ -11,6 +13,11 @@ import lombok.Setter;
 
 import java.util.Collection;
 import java.util.List;
+
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+
+import jakarta.persistence.GeneratedValue;
 
 
 @Entity
@@ -35,18 +42,18 @@ public class User implements UserDetails{
     @Column(name = "verification_expiration")
     private LocalDateTime verificationCodeExpiresAt;
 
-    public User (String username, String email, String password){
+    public User(String username, String email, String password){
         this.username = username;
         this.email = email;
         this.password = password;
     }
 
-    public User (){
+    public User() {
     }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities(){
-        return List.of()
+        return List.of();
     }
 
     @Override
@@ -60,7 +67,7 @@ public class User implements UserDetails{
     }
 
     @Override
-    public boolean isCredentialsnonExpired(){ //TODO: implement logic
+    public boolean isCredentialsNonExpired(){ //TODO: implement logic
         return true;
     }
 

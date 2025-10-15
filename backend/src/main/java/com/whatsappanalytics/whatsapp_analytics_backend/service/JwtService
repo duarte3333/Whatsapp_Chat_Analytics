@@ -4,10 +4,10 @@ package com.whatsappanalytics.whatsapp_analytics_backend.service;
 @Service
 public class JwtService{
 
-    @Value("$(security.jwt.secret-key)")
+    @Value("${security.jwt.secret-key}")
     private String secretKey;
 
-    @Value("$(security.jwt.expiration-time)")
+    @Value("${security.jwt.expiration-time}")
     private long jwtExpiration;
 
     public String extractUsername(String token){
@@ -56,7 +56,22 @@ public class JwtService{
         return extractClaim(token, Claims::getExpiration);        
     }
 
-    
+    private Claims extractAllClaims(String token){
+
+        return Jwts
+        .parserBuilder()
+        .setSigningKey(getSIgnInKey())
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+    }
+
+    private Key getSignInKey(){
+        byte[] keyBytes = Decoders.BASE64.Decoders(secretKey);
+        return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+
 
 
 
