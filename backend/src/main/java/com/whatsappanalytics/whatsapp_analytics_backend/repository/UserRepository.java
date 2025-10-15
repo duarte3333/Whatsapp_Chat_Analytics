@@ -1,4 +1,4 @@
-package com.whatsappanalytics.whatsapp_analytics_backend;
+package com.whatsappanalytics.whatsapp_analytics_backend.repository;
 
 
 
