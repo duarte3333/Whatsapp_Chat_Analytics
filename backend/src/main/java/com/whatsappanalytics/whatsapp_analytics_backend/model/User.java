@@ -37,7 +37,7 @@ public class User implements UserDetails{
     private boolean enabled;
 
     @Column(name = "verification_code")
-    private String verificationcode;
+    private String verificationCode;
 
     @Column(name = "verification_expiration")
     private LocalDateTime verificationCodeExpiresAt;
