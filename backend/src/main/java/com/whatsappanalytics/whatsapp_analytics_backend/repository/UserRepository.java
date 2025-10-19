@@ -8,7 +8,6 @@ import org.springframework.stereotype.Repository;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 
 
-
 @Repository
 public interface UserRepository extends CrudRepository<User, Long> {
     
