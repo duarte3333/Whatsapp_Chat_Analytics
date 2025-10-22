@@ -20,6 +20,7 @@ class User {
   + isEnabled(): boolean
 }
 
+'TODO: change according to stats
 class GroupChat {
   * Long id
   String title
@@ -35,8 +36,6 @@ class ChatMetrics {
   Map<String,int> messagesPerSender
   List<String> topWords
   Map<String,int> emojiCounts
-  List<int> hourlyActivity
-  List<int> dailyActivity
   Map<String,float> sentimentScores
   DateTime updatedAt
 }
