@@ -15,12 +15,12 @@ class WhatsAppChatParser:
     """Parser for WhatsApp chat export files."""
     
     # WhatsApp message regex patterns
-    # Pattern 1: Regular messages with colon [YY-MM-DD, HH:MM:SS] Sender: Message
-    MESSAGE_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2}), (\d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$')
+    # Pattern 1: Regular messages with colon - supports both DD/MM/YYYY and DD/MM/YY formats
+    MESSAGE_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2,4}), (\d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$')
     
     # Pattern 2: Media messages - same structure as regular messages but with media content
     # We'll detect media messages by analyzing the content, not the structure
-    MEDIA_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2}), (\d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$')
+    MEDIA_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2,4}), (\d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$')
     # Unicode control characters commonly found in WhatsApp exports
     UNICODE_CONTROL_CHARS = {
         '\u200E',  # Left-to-Right Mark
@@ -194,10 +194,19 @@ class WhatsAppChatParser:
     
     @staticmethod
     def parse_timestamp(date_str: str, time_str: str) -> Optional[str]:
-        """Parse WhatsApp date and time format to ISO timestamp."""
+        """Parse WhatsApp date and time format to ISO timestamp.
+        Supports both DD/MM/YYYY and DD/MM/YY formats."""
         try:
             datetime_str = f"{date_str} {time_str}"
-            dt = datetime.strptime(datetime_str, "%d/%m/%y %H:%M:%S")
+            
+            # Check if year is 2-digit or 4-digit
+            if len(date_str.split('/')[-1]) == 2:
+                # 2-digit year (DD/MM/YY)
+                dt = datetime.strptime(datetime_str, "%d/%m/%y %H:%M:%S")
+            else:
+                # 4-digit year (DD/MM/YYYY)
+                dt = datetime.strptime(datetime_str, "%d/%m/%Y %H:%M:%S")
+            
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except ValueError:
             return None
@@ -272,14 +281,15 @@ class WhatsAppChatParser:
         """Parse a single line that starts a new message."""
         # Try to match the message pattern (both regular and media have same structure)
         match = self.MESSAGE_PATTERN.match(line)
-        if match:
-            date_str, time_str, sender, message = match.groups()
-            # Use heuristic-based detection to determine if it's media
-            is_media = self._is_media_message(message)
-            if is_media:
-                print(f"Media message detected: {sender} - {message}")
-        else:
+        if not match:
             return None
+            
+        date_str, time_str, sender, message = match.groups()
+        
+        # Use heuristic-based detection to determine if it's media
+        is_media = self._is_media_message(message)
+        if is_media:
+            print(f"Media message detected: {sender} - {message}")
         
         # Clean sender name and apply mappings
         cleaned_sender = self.clean_unicode_controls(sender.strip())
@@ -434,7 +444,7 @@ class WhatsAppChatParser:
         print(f"Sender stats saved to: {sender_stats_path}")
 
 if __name__ == "__main__":
-    txt_file_path = "/home/duarte33/Documents/WhatsApp Chat - Drenas Espanholas/_chat.txt"
+    txt_file_path = "/home/duarte33/Documents/WhatsApp Chat - Duarte/_chat.txt"
     
     # Parse chat
     parser = WhatsAppChatParser()
@@ -444,7 +454,7 @@ if __name__ == "__main__":
     parser.setup_sender_mappings(df)
 
     #Francisco Vieira CPH is Kiks
-    parser.sender_mapping['Francisco Vieira CPH'] = 'Kiks'
+    #parser.sender_mapping['Francisco Vieira CPH'] = 'Kiks'
     
     # Apply mappings and save
     if parser.sender_mapping:
@@ -457,4 +467,12 @@ if __name__ == "__main__":
         print(f"\nFinal senders: {sorted(df_mapped['sender'].unique())}")
         print(f"Group: {parser.group_name}")
     else:
-        print("No mappings created")
+        print("No mappings created - saving original data")
+        # Save the original data even without mappings
+        df.to_csv("chat_parsed.csv", index=False, encoding='utf-8')
+        
+        # Save group information
+        parser.save_group_info(df, "group_info.csv")
+        
+        print(f"\nFinal senders: {sorted(df['sender'].unique())}")
+        print(f"Group: {parser.group_name}")
