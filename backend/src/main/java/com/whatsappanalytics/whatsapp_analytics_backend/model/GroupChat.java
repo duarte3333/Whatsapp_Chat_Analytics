@@ -26,7 +26,7 @@ public class GroupChat {
 
     @ManyToOne
     @JoinColumn(name = "user_id", nullable = false)
-    private User owner;
+    private User userId;
 
     private int participantsCount;
     private int totalMessages;

@@ -25,7 +25,7 @@ public class ChatMetrics {
 
     @ManyToOne
     @JoinColumn(name = "group_chat_id", nullable = false)
-    private GroupChat groupChat;
+    private GroupChat groupChatId;
 
     private int totalMessages;
 

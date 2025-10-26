@@ -18,7 +18,6 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.ChatMetricsService;
 
-
 @RestController
 @RequestMapping("/metrics")
 public class ChatMetricsController {
@@ -30,30 +29,38 @@ public class ChatMetricsController {
     }
 
     // Authenticated user uploads metrics
-    @PostMapping("/chat/{chatId}")
-    public ResponseEntity<ChatMetrics> uploadMetrics(
-            @PathVariable Long chatId,
-            @RequestBody ChatMetrics metrics,
-            @AuthenticationPrincipal User currentUser) {
-        ChatMetrics saved = chatMetricsService.uploadMetrics(chatId, metrics, currentUser);
-        return ResponseEntity.ok(saved);
-    }
+    // @PostMapping("/chat/{chatId}/upload")
+    // public ResponseEntity<ChatMetrics> uploadForUser(
+    //         @PathVariable Long chatId,
+    //         @RequestParam("file") MultipartFile file,
+    //         @AuthenticationPrincipal User currentUser) {
+
+    //     if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
+    //         return ResponseEntity.badRequest().build();
+    //     }
+
+    //     ChatMetrics saved = chatMetricsService.processAndSaveMetrics(file, chatId, currentUser);
+    //     return ResponseEntity.ok(saved);
+    // }
 
     // Anonymous upload (no user)
-    @PostMapping("/chat/{chatId}/anonymous")
-    public ResponseEntity<ChatMetrics> uploadMetricsAnonymous(
-            @PathVariable Long chatId,
-            @RequestBody ChatMetrics metrics) {
-        ChatMetrics saved = chatMetricsService.uploadMetrics(chatId, metrics, null);
-        return ResponseEntity.ok(saved);
+    @PostMapping("/chat/upload-anonymous")
+    public ResponseEntity<Map<String, Object>> uploadAnonymous(@RequestParam("file") MultipartFile file) {
+        if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
+        }
+
+        // Call service to send file to Python microservice
+        Map<String, Object> stats = chatMetricsService.processAnonymousFile(file);
+        return ResponseEntity.ok(stats);
     }
 
-    // Get metrics for a chat
-    @GetMapping("/chat/{chatId}")
-    public ResponseEntity<List<ChatMetrics>> getMetrics(@PathVariable Long chatId) {
-        List<ChatMetrics> metrics = chatMetricsService.getMetricsByChatId(chatId);
-        return ResponseEntity.ok(metrics);
-    }
+    // // Get metrics for a chat
+    // @GetMapping("/chat/{chatId}")
+    // public ResponseEntity<List<ChatMetrics>> getMetrics(@PathVariable Long chatId) {
+    //     List<ChatMetrics> metrics = chatMetricsService.getMetricsByChatId(chatId);
+    //     return ResponseEntity.ok(metrics);
+    // }
 
 }
 

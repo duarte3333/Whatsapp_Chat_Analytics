@@ -8,6 +8,5 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
 
 @Repository
 public interface ChatMetricsRepository extends JpaRepository<ChatMetrics, Long> {
-    List<ChatMetrics> findByGroupChatId(Long groupChatId);
-    ChatMetrics findByIdAndGroupChatId(Long id, Long groupChatId);
+    List<ChatMetrics> findByGroupChatId_Id(Long groupChatId);
 }
