@@ -47,3 +47,5 @@ out/
 *.pem
 *.der
 *.jks
+*.csv
+.env/

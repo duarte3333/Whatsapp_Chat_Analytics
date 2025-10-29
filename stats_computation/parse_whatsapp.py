@@ -444,7 +444,7 @@ class WhatsAppChatParser:
         print(f"Sender stats saved to: {sender_stats_path}")
 
 if __name__ == "__main__":
-    txt_file_path = "/home/duarte33/Documents/WhatsApp Chat - Duarte/_chat.txt"
+    txt_file_path = "/home/duarte33/Documents/WhatsApp Chat - Drenas Espanholas/_chat.txt"
     
     # Parse chat
     parser = WhatsAppChatParser()
