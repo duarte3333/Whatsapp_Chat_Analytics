@@ -48,4 +48,5 @@ out/
 *.der
 *.jks
 *.csv
+stats_computation/*.csv
 .env/
