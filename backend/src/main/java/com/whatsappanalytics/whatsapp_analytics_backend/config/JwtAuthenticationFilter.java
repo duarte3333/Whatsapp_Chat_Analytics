@@ -34,7 +34,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.userDetailsService = userDetailsService;
         this.handlerExceptionResolver = handlerExceptionResolver;
     }
-
+        
     @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
@@ -52,18 +52,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             final String jwt = authHeader.substring(7);
-            final String userEmail = jwtService.extractUsername(jwt);
+            final String username = jwtService.extractUsername(jwt);
 
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            System.out.println("Extracted username: " + userEmail);
+            System.out.println("Extracted username: " + username);
             System.out.println("Current authentication: " + authentication);
-            
-            if (userEmail != null && authentication == null) {
-                System.out.println("Attempting authentication for user: " + userEmail);
-                UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
-                System.out.println("Token valid? " + jwtService.isTokenValid(jwt, userDetails));
 
-                if (jwtService.isTokenValid(jwt, userDetails)) {
+            if (username != null && authentication == null) {
+                System.out.println("Attempting authentication for user: " + username);
+
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+                boolean valid = jwtService.isTokenValid(jwt, userDetails);
+                System.out.println("Token valid? " + valid);
+
+                if (valid) {
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails,
                             null,
@@ -72,12 +74,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
+                } else {
+                    System.out.println("JWT token invalid for user: " + username);
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid JWT token");
+                    return;
                 }
             }
 
             filterChain.doFilter(request, response);
-        } catch (Exception exception) {
-            handlerExceptionResolver.resolveException(request, response, null, exception);
+        } catch (Exception ex) {
+            System.err.println("JWT authentication failed: " + ex.getMessage());
+            ex.printStackTrace();
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "JWT authentication failed");
         }
     }
-}
+
+        }
+    

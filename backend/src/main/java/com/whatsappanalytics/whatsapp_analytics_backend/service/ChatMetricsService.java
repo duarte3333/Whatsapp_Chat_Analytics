@@ -97,6 +97,7 @@ public class ChatMetricsService {
         newChat.setUserId(currentUser);
         newChat.setTitle("Chat " + System.currentTimeMillis()); //TODO: change to appropriate name
         newChat.setParticipantsCount((int) stats.getOrDefault("participants_count", 0)); //TODO: adjust according to stats
+        newChat.setCreatedAt(LocalDateTime.now());
         groupChatRepository.save(newChat);
 
         // 2. Create ChatMetrics entity
