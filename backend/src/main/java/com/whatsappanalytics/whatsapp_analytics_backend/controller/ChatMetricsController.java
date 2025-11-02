@@ -29,19 +29,30 @@ public class ChatMetricsController {
     }
 
     // Authenticated user uploads metrics
-    // @PostMapping("/chat/{chatId}/upload")
-    // public ResponseEntity<ChatMetrics> uploadForUser(
-    //         @PathVariable Long chatId,
-    //         @RequestParam("file") MultipartFile file,
-    //         @AuthenticationPrincipal User currentUser) {
+    @PostMapping("/chat/upload")
+    public ResponseEntity<?> uploadForUser(
+            @RequestParam("file") MultipartFile file,
+            @AuthenticationPrincipal User currentUser) {
+        System.out.println("Received upload request: ");
 
-    //     if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
-    //         return ResponseEntity.badRequest().build();
-    //     }
+        if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
+        }
 
-    //     ChatMetrics saved = chatMetricsService.processAndSaveMetrics(file, chatId, currentUser);
-    //     return ResponseEntity.ok(saved);
-    // }
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
+        }
+
+        try {
+            System.out.println("Saved metrics: ");
+            ChatMetrics savedMetrics = chatMetricsService.processAndSaveMetrics(file, currentUser);
+            System.out.println("Saved metrics: " + savedMetrics);
+            return ResponseEntity.ok(Map.of("status", "upload successful"));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        }
+    }
+
 
     // Anonymous upload (no user)
     @PostMapping("/chat/upload-anonymous")

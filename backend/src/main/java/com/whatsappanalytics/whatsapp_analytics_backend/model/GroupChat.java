@@ -16,7 +16,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "GroupChat")
+@Table(name = "group_chat")
 public class GroupChat {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,8 +29,5 @@ public class GroupChat {
     private User userId;
 
     private int participantsCount;
-    private int totalMessages;
-    private String mostActiveMember;
-
     private LocalDateTime createdAt;
 }

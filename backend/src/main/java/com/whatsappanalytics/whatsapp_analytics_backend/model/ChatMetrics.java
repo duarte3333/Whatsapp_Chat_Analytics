@@ -17,7 +17,7 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "ChatMetrics")
+@Table(name = "chat_metrics")
 public class ChatMetrics {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,18 +29,10 @@ public class ChatMetrics {
 
     private int totalMessages;
 
-    @Column(columnDefinition = "json")
-    private String messagesPerSender;
+    private String topUser;
 
-    @Column(columnDefinition = "json")
-    private String topWords;
+    private LocalDateTime createdAt;
 
-    @Column(columnDefinition = "json")
-    private String emojiCounts;
-
-    @Column(columnDefinition = "json")
-    private String sentimentScores;
-
-    private LocalDateTime updatedAt;
+    private LocalDateTime lastUpdated;
 }
 
