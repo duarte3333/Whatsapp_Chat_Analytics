@@ -45,11 +45,20 @@ public class ChatMetricsService {
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
 
+    // New constructor for unit tests
+    public ChatMetricsService(ChatMetricsRepository chatMetricsRepository,
+                              GroupChatRepository groupChatRepository,
+                              RestTemplate restTemplate) {
+        this.chatMetricsRepository = chatMetricsRepository;
+        this.groupChatRepository = groupChatRepository;
+        this.restTemplate = restTemplate;
+    }
+
     public ChatMetricsService(
-        ChatMetricsRepository chatMetricsRepository,
-        GroupChatRepository groupChatRepository,
-        @Value("${python.truststore.path}") String truststorePath,
-        @Value("${python.truststore.password}") String truststorePassword
+            ChatMetricsRepository chatMetricsRepository,
+            GroupChatRepository groupChatRepository,
+            @Value("${python.truststore.path}") String truststorePath,
+            @Value("${python.truststore.password}") String truststorePassword
     ) throws Exception {
         this.chatMetricsRepository = chatMetricsRepository;
         this.groupChatRepository = groupChatRepository;
@@ -112,7 +121,6 @@ public class ChatMetricsService {
         return chatMetricsRepository.save(chatMetrics);
     }
 
-    
 
     private Map<String, Object> sendFileToPython(MultipartFile file) {
         try {
@@ -134,7 +142,8 @@ public class ChatMetricsService {
                     pythonServiceUrl,
                     HttpMethod.POST,
                     requestEntity,
-                    new ParameterizedTypeReference<Map<String, Object>>() {}
+                    new ParameterizedTypeReference<Map<String, Object>>() {
+                    }
             ).getBody();
         } catch (IOException e) {
             throw new RuntimeException("Failed to send file to Python service", e);
