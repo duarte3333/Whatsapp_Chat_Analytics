@@ -9,6 +9,7 @@ import java.util.Map;
 import javax.net.ssl.SSLContext;
 import javax.swing.GroupLayout.Group;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpEntity;
@@ -45,7 +46,7 @@ public class ChatMetricsService {
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
 
-    // New constructor for unit tests
+    @Autowired
     public ChatMetricsService(ChatMetricsRepository chatMetricsRepository,
                               GroupChatRepository groupChatRepository,
                               RestTemplate restTemplate) {
