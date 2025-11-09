@@ -18,23 +18,28 @@ UNICODE_CONTROL_CHARS = {
     '\u202E',  # Right-to-Left Override
 }
 
+# Pre-compute translation table for faster cleaning
+_CONTROL_CHAR_TRANSLATE = str.maketrans('', '', ''.join(UNICODE_CONTROL_CHARS))
+
 
 def clean_unicode_controls(text: str) -> str:
-    """Remove Unicode control characters from text."""
+    """Remove Unicode control characters from text (optimized version)."""
     if not text:
         return text
     
-    # Remove specific control characters
-    for char in UNICODE_CONTROL_CHARS:
-        text = text.replace(char, '')
+    # Fast removal of known control characters using translate
+    text = text.translate(_CONTROL_CHAR_TRANSLATE)
     
     # Remove any remaining control characters (categories 'Cc' and 'Cf')
-    cleaned = ''.join(
-        char for char in text 
-        if unicodedata.category(char) not in ['Cc', 'Cf']
-    )
+    # Use list comprehension with join for better performance
+    if any(unicodedata.category(c) in ['Cc', 'Cf'] for c in text):
+        cleaned = ''.join(
+            char for char in text 
+            if unicodedata.category(char) not in ['Cc', 'Cf']
+        )
+        return cleaned.strip()
     
-    return cleaned.strip()
+    return text.strip()
 
 
 def remove_emojis(text: str) -> str:

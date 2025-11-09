@@ -4,7 +4,7 @@ Main entry point for WhatsApp chat parser.
 """
 
 from parser import WhatsAppChatParser
-
+from emotion_detector import EmotionDetector
 
 if __name__ == "__main__":
     txt_file_path = "/home/duarte33/Documents/WhatsApp Chat - Drenas Espanholas/_chat_old.txt"
@@ -12,6 +12,11 @@ if __name__ == "__main__":
     # Parse chat
     parser = WhatsAppChatParser()
     df = parser.parse_to_csv(txt_file_path)
+    print("Done standard processing")
+    #Get sentiment for each week
+    emotion_detector = EmotionDetector()
+    df = emotion_detector.get_emotions_by_week(df)
+
 
     # Setup mappings
     parser.setup_sender_mappings(df)

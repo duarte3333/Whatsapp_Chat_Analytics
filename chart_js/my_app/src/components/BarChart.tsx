@@ -42,7 +42,7 @@ export default function MuiBarChart() {
       yAxis={chartData.yAxis}
       series={chartData.series}
       height={300}
-      margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+      margin={{ top: 10, right: 5, left: 5, bottom: 5 }}  
     />
   );
 }

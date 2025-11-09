@@ -13,7 +13,7 @@ class WhatsAppChatParser:
     
     def __init__(self):
         self.sender_mapper = SenderMapper()
-        self.emotion_detector = EmotionDetector()
+        self._emotion_detector = None  # Lazy initialization
     
     def set_group_name(self, group_name: str) -> None:
         self.sender_mapper.group_name = group_name
@@ -40,22 +40,30 @@ class WhatsAppChatParser:
             df['day_of_week'] = df['datetime'].dt.day_name()
             df['month'] = df['datetime'].dt.month_name()
             df['year'] = df['datetime'].dt.year
-
-            #df['emotion'] = df['message'].apply(self.get_emotion)
+            df['week'] = df['datetime'].dt.to_period('W').astype(str)
         return df
-    
-    def get_emotion(self, message: str) -> str:
-        """Get the emotion of a message."""
-        if self.emotion_detector:
-            return self.emotion_detector.get_emotion(message)
-        return "neutral"
     
     def parse_to_csv(self, txt_file_path: str) -> pd.DataFrame:
         """Parse WhatsApp chat file to CSV."""
         messages = self._process_file(txt_file_path)
-        self.set_group_name(messages[0]['sender'])
+        
+        if not messages:
+            print("No messages found in file")
+            return pd.DataFrame()
+        
+        # Set group name from first message's sender
+        group_name = messages[0]['sender']
+        self.set_group_name(group_name)
         print(f"Group name: {self.group_name}")
-        df = self.create_dataframe(messages)        
+        
+        # Filter out messages from the group name (group messages, not participant messages)
+        filtered_messages = [msg for msg in messages if msg['sender'] != group_name]
+        filtered_count = len(messages) - len(filtered_messages)
+        
+        if filtered_count > 0:
+            print(f"Filtered out {filtered_count} messages from group '{group_name}'")
+        
+        df = self.create_dataframe(filtered_messages)        
         return df
 
     def _process_file(self, file_path: str) -> List[Dict[str, Any]]:
@@ -64,31 +72,53 @@ class WhatsAppChatParser:
         mapping = self.sender_mapper.sender_mapping
         
         print(f"Reading {file_path}...")
-        with open(file_path, 'r', encoding='utf-8') as file:
-            for line_num, line in enumerate(file, 1):
-                if not (line := line.strip()):
+        # Read file in chunks for better performance
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+            line_num = 0
+            for line in file:
+                line_num += 1
+                stripped = line.strip()
+                if not stripped:
                     continue
                 
-                cleaned_line = clean_unicode_controls(line)
-                new_message = parse_message_line(cleaned_line, line_num, sender_mapping=mapping)
-                
-                if new_message:
-                    if current_message:
-                        messages.append(current_message)
-                    current_message = new_message
+                # Only clean unicode if line might be a message (starts with [)
+                if stripped.startswith('['):
+                    cleaned_line = clean_unicode_controls(stripped)
+                    new_message = parse_message_line(cleaned_line, line_num, sender_mapping=mapping)
+                    
+                    if new_message:
+                        if current_message:
+                            messages.append(current_message)
+                        current_message = new_message
+                    elif current_message:
+                        # Check for embedded message in continuation
+                        if ']' in cleaned_line and ':' in cleaned_line:
+                            if embedded := parse_message_line(cleaned_line, line_num, sender_mapping=mapping):
+                                if current_message:
+                                    messages.append(current_message)
+                                current_message = embedded
+                                continue
+                        current_message['message'] += '\n' + cleaned_line
                 elif current_message:
-                    # Check for embedded message or continue previous
-                    if cleaned_line.startswith('[') and ']' in cleaned_line and ':' in cleaned_line:
-                        if embedded := parse_message_line(cleaned_line, line_num, sender_mapping=mapping):
+                    # Continuation line - check for embedded messages first
+                    cleaned_stripped = clean_unicode_controls(stripped)
+                    
+                    # Check if this continuation line contains an embedded message pattern
+                    if cleaned_stripped.startswith('[') and ']' in cleaned_stripped and ':' in cleaned_stripped:
+                        # Try to parse as embedded message
+                        if embedded := parse_message_line(cleaned_stripped, line_num, sender_mapping=mapping):
                             if current_message:
                                 messages.append(current_message)
                             current_message = embedded
                             continue
-                    current_message['message'] += '\n' + cleaned_line
+                    
+                    # Regular continuation - append to current message
+                    current_message['message'] += '\n' + cleaned_stripped
             
             if current_message:
                 messages.append(current_message)
         
+        print(f"✓ Parsed {len(messages)} messages")
         return messages
 
     def setup_sender_mappings(self, df: pd.DataFrame) -> None:

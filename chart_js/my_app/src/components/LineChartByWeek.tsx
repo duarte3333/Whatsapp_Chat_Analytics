@@ -54,7 +54,7 @@ export default function LineChartByWeek() {
       yAxis={chartData.yAxis}
       series={chartData.series}
       height={300}
-      margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+      margin={{ top: 10, right: 5, left: 5, bottom: 5 }}
     />
   );
 }

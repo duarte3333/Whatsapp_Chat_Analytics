@@ -1,7 +1,5 @@
 import * as React from 'react';
 import { Grid, Paper } from '@mui/material';
-import TotalMessagesWithSparkline from './TotalMessagesWithSparkline';
-import DateRange from './DateRange';
 import BarChart from './BarChart';
 import LineChartByWeek from './LineChartByWeek';
 

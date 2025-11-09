@@ -74,11 +74,14 @@ def parse_message_line(line: str, line_num: int, sender_mapping: dict = None) ->
     is_media = is_media_message(message)
     mapped_sender = sender_mapping.get(cleaned_sender, cleaned_sender) if sender_mapping else cleaned_sender
     
+    # Ensure emojis are removed from sender (even after mapping, in case mapping contains emojis)
+    final_sender = remove_emojis(clean_unicode_controls(mapped_sender.strip()))
+    
     return {
         'timestamp': parse_timestamp(date_str, time_str),
         'date': date_str,
         'time': time_str,
-        'sender': mapped_sender,
+        'sender': final_sender,
         'message': clean_unicode_controls(message),
         'media': 'yes' if is_media else 'no',
         'line_number': line_num
