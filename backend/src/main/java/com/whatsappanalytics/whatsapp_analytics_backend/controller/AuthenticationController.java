@@ -36,7 +36,7 @@ public class AuthenticationController {
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
         String token = jwtService.generateToken(authenticatedUser);
         long expiresIn = jwtService.getExpirationTime();
-        LoginResponse loginResponse = new LoginResponse(token, expiresIn);
+        LoginResponse loginResponse = new LoginResponse(token, expiresIn, authenticatedUser);
         return ResponseEntity.ok(loginResponse);
     }
 

@@ -36,10 +36,12 @@ public class ChatMetricsController {
         System.out.println("Received upload request: ");
 
         if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
+            System.out.println("Received upload request: Invalid file");
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
         }
 
         if (currentUser == null) {
+            System.out.println("Received upload request: User not authenticated");
             return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
         }
 
@@ -49,6 +51,7 @@ public class ChatMetricsController {
             System.out.println("Saved metrics: " + savedMetrics);
             return ResponseEntity.ok(Map.of("status", "upload successful"));
         } catch (Exception e) {
+            System.out.println("Error processing file: " + e.getMessage());
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }

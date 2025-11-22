@@ -30,6 +30,7 @@ import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
 
 import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
@@ -42,18 +43,10 @@ import com.whatsappanalytics.whatsapp_analytics_backend.repository.GroupChatRepo
 public class ChatMetricsService {
 
     private final RestTemplate restTemplate;
-    private final String pythonServiceUrl = "https://127.0.0.1:5050/analyze";
+    private final String pythonServiceUrl = "https://localhost:5050/analyze";
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
-
-    @Autowired
-    public ChatMetricsService(ChatMetricsRepository chatMetricsRepository,
-                              GroupChatRepository groupChatRepository,
-                              RestTemplate restTemplate) {
-        this.chatMetricsRepository = chatMetricsRepository;
-        this.groupChatRepository = groupChatRepository;
-        this.restTemplate = restTemplate;
-    }
+    
 
     public ChatMetricsService(
             ChatMetricsRepository chatMetricsRepository,
