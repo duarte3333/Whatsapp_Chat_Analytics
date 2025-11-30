@@ -7,9 +7,7 @@ import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.Map;
 import javax.net.ssl.SSLContext;
-import javax.swing.GroupLayout.Group;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpEntity;
@@ -24,13 +22,11 @@ import org.springframework.web.multipart.MultipartFile;
 
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Profile;
 import org.springframework.core.ParameterizedTypeReference;
 
 import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
@@ -97,19 +93,20 @@ public class ChatMetricsService {
 
         // 1. Fetch or create GroupChat
         GroupChat newChat = new GroupChat();
-        newChat.setUserId(currentUser);
         newChat.setTitle("Chat " + System.currentTimeMillis()); //TODO: change to appropriate name
+        newChat.setUserId(currentUser.getId());
         newChat.setParticipantsCount((int) stats.getOrDefault("participants_count", 0)); //TODO: adjust according to stats
         newChat.setCreatedAt(LocalDateTime.now());
         groupChatRepository.save(newChat);
 
-        // 2. Create ChatMetrics entity
+        // TODO: adjust according to stats from python service
         ChatMetrics chatMetrics = new ChatMetrics();
-        chatMetrics.setGroupChatId(newChat);
+        chatMetrics.setGroupChatId(newChat.getId());
         chatMetrics.setTotalMessages(stats.get("total_messages") != null ? (int) stats.get("total_messages") : 0);
-        chatMetrics.setTopUser((String) stats.get("top_user"));
+        chatMetrics.setTopUser("Alice"); //TODO: adjust according to stats
         chatMetrics.setCreatedAt(LocalDateTime.now());
         chatMetrics.setLastUpdated(LocalDateTime.now());
+
 
         // 3. Persist ChatMetrics
         return chatMetricsRepository.save(chatMetrics);

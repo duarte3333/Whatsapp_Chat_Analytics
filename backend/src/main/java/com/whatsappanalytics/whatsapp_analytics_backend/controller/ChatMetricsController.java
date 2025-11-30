@@ -33,25 +33,21 @@ public class ChatMetricsController {
     public ResponseEntity<?> uploadForUser(
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal User currentUser) {
-        System.out.println("Received upload request: ");
 
         if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
-            System.out.println("Received upload request: Invalid file");
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
         }
 
         if (currentUser == null) {
-            System.out.println("Received upload request: User not authenticated");
             return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
         }
 
         try {
-            System.out.println("Saved metrics: ");
-            ChatMetrics savedMetrics = chatMetricsService.processAndSaveMetrics(file, currentUser);
-            System.out.println("Saved metrics: " + savedMetrics);
+            chatMetricsService.processAndSaveMetrics(file, currentUser);
             return ResponseEntity.ok(Map.of("status", "upload successful"));
         } catch (Exception e) {
-            System.out.println("Error processing file: " + e.getMessage());
+            System.err.println("Error processing file uploadaaa: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
     }

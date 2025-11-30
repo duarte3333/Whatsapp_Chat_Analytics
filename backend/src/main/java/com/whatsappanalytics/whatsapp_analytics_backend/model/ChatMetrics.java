@@ -7,13 +7,10 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
 import lombok.Getter;
 import lombok.Setter;
-
 @Getter
 @Setter
 @Entity
@@ -23,16 +20,18 @@ public class ChatMetrics {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "group_chat_id", nullable = false)
-    private GroupChat groupChatId;
+    @Column(name = "group_chat_id", nullable = false)
+    private long groupChatId;
 
+    @Column(name = "total_messages", nullable = false)
     private int totalMessages;
 
+    @Column(name = "top_user", nullable = false)
     private String topUser;
 
+    @Column(name = "created_at", nullable =  false)
     private LocalDateTime createdAt;
 
+    @Column(name = "last_updated", nullable = false)
     private LocalDateTime lastUpdated;
 }
-

@@ -10,7 +10,6 @@ import java.util.List;
 @Repository
 public interface GroupChatRepository extends JpaRepository<GroupChat, Long> {
 
-    List<GroupChat> findByUserId_Id(Long userId);
-    GroupChat findByIdAndUserId_Id(Long groupId, Long userId);
-
+    List<GroupChat> findByUserId(Long userId);
+    GroupChat findByIdAndUserId(Long groupId, Long userId);
 }
