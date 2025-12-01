@@ -20,14 +20,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.web.multipart.MultipartFile;
 
-import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
-import org.apache.hc.client5.http.impl.classic.HttpClients;
-import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
-import org.apache.hc.core5.ssl.SSLContexts;
-import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.GroupChat;
@@ -45,38 +39,13 @@ public class ChatMetricsService {
     
 
     public ChatMetricsService(
-            ChatMetricsRepository chatMetricsRepository,
-            GroupChatRepository groupChatRepository,
-            @Value("${python.truststore.path}") String truststorePath,
-            @Value("${python.truststore.password}") String truststorePassword
-    ) throws Exception {
-        this.chatMetricsRepository = chatMetricsRepository;
-        this.groupChatRepository = groupChatRepository;
-
-        KeyStore trustStore = KeyStore.getInstance("PKCS12");
-        try (InputStream fis = new ClassPathResource(truststorePath).getInputStream()) {
-            trustStore.load(fis, truststorePassword.toCharArray());
-        }
-        SSLContext sslContext = SSLContexts.custom()
-                .loadTrustMaterial(trustStore, new TrustSelfSignedStrategy())
-                .build();
-
-        var sslSocketFactory = SSLConnectionSocketFactoryBuilder.create()
-                .setSslContext(sslContext)
-                .build();
-
-        var connectionManager = PoolingHttpClientConnectionManagerBuilder.create()
-                .setSSLSocketFactory(sslSocketFactory)
-                .build();
-
-        CloseableHttpClient httpClient = HttpClients.custom()
-                .setConnectionManager(connectionManager)
-                .build();
-
-        HttpComponentsClientHttpRequestFactory requestFactory =
-                new HttpComponentsClientHttpRequestFactory(httpClient);
-
-        this.restTemplate = new RestTemplate(requestFactory);
+        ChatMetricsRepository chatMetricsRepository,
+        GroupChatRepository groupChatRepository,
+        @Qualifier("pythonRestTemplate") RestTemplate restTemplate
+    ) {
+    this.chatMetricsRepository = chatMetricsRepository;
+    this.groupChatRepository = groupChatRepository;
+    this.restTemplate = restTemplate;
     }
 
     public Map<String, Object> processAnonymousFile(MultipartFile file) {
