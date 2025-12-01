@@ -49,8 +49,13 @@ public class ChatMetricsService {
     }
 
     public Map<String, Object> processAnonymousFile(MultipartFile file) {
+        System.out.println("=== processAnonymousFile called ===");
+        System.out.println("File name: " + file.getOriginalFilename());
+        System.out.println("File size: " + file.getSize());
+        
         Map<String, Object> stats = sendFileToPython(file);
         System.out.println("Received stats from Python service: " + stats);
+        System.out.println("Stats keys: " + (stats != null ? stats.keySet() : "null"));
         return stats != null ? stats : Collections.emptyMap();
     }
 
@@ -62,20 +67,43 @@ public class ChatMetricsService {
 
         // 1. Fetch or create GroupChat
         GroupChat newChat = new GroupChat();
-        newChat.setTitle("Chat " + System.currentTimeMillis()); //TODO: change to appropriate name
+        // Extract title from stats (Python service now provides this)
+        String title = (String) stats.getOrDefault("title", "Chat " + System.currentTimeMillis());
+        newChat.setTitle(title);
         newChat.setUserId(currentUser.getId());
-        newChat.setParticipantsCount((int) stats.getOrDefault("participants_count", 0)); //TODO: adjust according to stats
+
+        // Extract participants_count from stats
+        Object participantsCountObj = stats.get("participants_count");
+        int participantsCount = 0;
+        if (participantsCountObj instanceof Integer) {
+            participantsCount = (Integer) participantsCountObj;
+        } else if (participantsCountObj instanceof Number) {
+            participantsCount = ((Number) participantsCountObj).intValue();
+        }
+        newChat.setParticipantsCount(participantsCount);
         newChat.setCreatedAt(LocalDateTime.now());
         groupChatRepository.save(newChat);
 
-        // TODO: adjust according to stats from python service
+        // 2. Create ChatMetrics from stats returned by Python service
         ChatMetrics chatMetrics = new ChatMetrics();
         chatMetrics.setGroupChatId(newChat.getId());
-        chatMetrics.setTotalMessages(stats.get("total_messages") != null ? (int) stats.get("total_messages") : 0);
-        chatMetrics.setTopUser("Alice"); //TODO: adjust according to stats
+
+        // Extract total_messages from stats
+        Object totalMessagesObj = stats.get("total_messages");
+        int totalMessages = 0;
+        if (totalMessagesObj instanceof Integer) {
+            totalMessages = (Integer) totalMessagesObj;
+        } else if (totalMessagesObj instanceof Number) {
+            totalMessages = ((Number) totalMessagesObj).intValue();
+        }
+        chatMetrics.setTotalMessages(totalMessages);
+
+        // Extract top_user from stats (Python service now provides this)
+        String topUser = (String) stats.getOrDefault("top_user", "Unknown");
+        chatMetrics.setTopUser(topUser);
+
         chatMetrics.setCreatedAt(LocalDateTime.now());
         chatMetrics.setLastUpdated(LocalDateTime.now());
-
 
         // 3. Persist ChatMetrics
         return chatMetricsRepository.save(chatMetrics);
