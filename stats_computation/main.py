@@ -14,8 +14,8 @@ if __name__ == "__main__":
     df = parser.parse_to_csv(txt_file_path)
     print("Done standard processing")
     #Get sentiment for each week
-    emotion_detector = EmotionDetector()
-    df = emotion_detector.get_emotions_by_week(df)
+    #emotion_detector = EmotionDetector()
+    #df = emotion_detector.get_emotions_by_week(df)
 
 
     # Setup mappings

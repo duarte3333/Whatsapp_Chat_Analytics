@@ -37,3 +37,13 @@ curl -v -X POST "http://localhost:8080/metrics/chat/upload" \
   -H "Authorization: Bearer <JWT_TOKEN>" \
   -F "file=@/path/to/your/chat_file.zip"
 ```
+
+
+### 5) Run Frontend
+
+npm run dev
+
+#### Performs a request which is a post
+curl -X POST "http://localhost:8080/metrics/chat/upload-anonymous" \
+  -F "file=@/home/duarte33/Documents/WhatsApp Chat - Drenas Espanholas.zip" \
+  -v 2>&1 | head -50

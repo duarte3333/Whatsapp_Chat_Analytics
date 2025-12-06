@@ -57,11 +57,12 @@ class WhatsAppChatParser:
         print(f"Group name: {self.group_name}")
         
         # Filter out messages from the group name (group messages, not participant messages)
-        filtered_messages = [msg for msg in messages if msg['sender'] != group_name]
-        filtered_count = len(messages) - len(filtered_messages)
+        #filtered_messages = [msg for msg in messages if msg['sender'] != group_name]
+        # filtered_count = len(messages) - len(filtered_messages)
+        filtered_messages = messages
         
-        if filtered_count > 0:
-            print(f"Filtered out {filtered_count} messages from group '{group_name}'")
+        # if filtered_count > 0:
+        #     print(f"Filtered out {filtered_count} messages from group '{group_name}'")
         
         df = self.create_dataframe(filtered_messages)        
         return df

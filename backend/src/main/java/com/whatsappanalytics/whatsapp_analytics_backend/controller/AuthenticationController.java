@@ -33,8 +33,11 @@ public class AuthenticationController {
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> authenticate(@RequestBody LoginUserDto loginUserDto) {
+        System.out.println("Test Controller");
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
+        System.out.println("Test Controller2");
         String token = jwtService.generateToken(authenticatedUser);
+        System.out.println("Test Controller3");
         long expiresIn = jwtService.getExpirationTime();
         LoginResponse loginResponse = new LoginResponse(token, expiresIn, authenticatedUser);
         return ResponseEntity.ok(loginResponse);

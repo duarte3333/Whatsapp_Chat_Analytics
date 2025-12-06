@@ -41,8 +41,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/v3/api-docs/**",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
-                "/metrics/chat/upload-anonymous",
-                "/metrics/chat/upload")
+                "/metrics/chat/upload-anonymous")
             .permitAll()
             .anyRequest().authenticated())
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

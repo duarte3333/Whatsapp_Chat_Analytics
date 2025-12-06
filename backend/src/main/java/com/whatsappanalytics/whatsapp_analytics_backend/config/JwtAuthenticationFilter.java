@@ -41,11 +41,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
-        System.out.println("JwtAuthenticationFilter triggered");
+        System.out.println("=== JwtAuthenticationFilter ===");
+        System.out.println("Request URI: " + request.getRequestURI());
+        System.out.println("Request Method: " + request.getMethod());
 
         final String authHeader = request.getHeader("Authorization");
+        System.out.println("Authorization header: " + (authHeader != null ? "Present (" + authHeader.length() + " chars)" : "NULL"));
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            System.out.println("No Bearer token found, passing through without auth");
             filterChain.doFilter(request, response);
             return;
         }

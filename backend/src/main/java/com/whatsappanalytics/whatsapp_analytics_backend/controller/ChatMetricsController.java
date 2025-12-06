@@ -30,7 +30,7 @@ public class ChatMetricsController {
 
     // Authenticated user uploads metrics
     @PostMapping("/chat/upload")
-    public ResponseEntity<?> uploadForUser(
+    public ResponseEntity<Map<String, Object>> uploadForUser(
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal User currentUser) {
 
@@ -43,10 +43,11 @@ public class ChatMetricsController {
         }
 
         try {
-            chatMetricsService.processAndSaveMetrics(file, currentUser);
-            return ResponseEntity.ok(Map.of("status", "upload successful"));
+            // Returns full stats including chart data + saved chat ID
+            Map<String, Object> stats = chatMetricsService.processAndSaveMetrics(file, currentUser);
+            return ResponseEntity.ok(stats);
         } catch (Exception e) {
-            System.err.println("Error processing file uploadaaa: " + e.getMessage());
+            System.err.println("Error processing file upload: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
         }
@@ -56,21 +57,37 @@ public class ChatMetricsController {
     // Anonymous upload (no user)
     @PostMapping("/chat/upload-anonymous")
     public ResponseEntity<Map<String, Object>> uploadAnonymous(@RequestParam("file") MultipartFile file) {
+        System.out.println("Test Controller");
         if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
         }
 
-        // Call service to send file to Python microservice
         Map<String, Object> stats = chatMetricsService.processAnonymousFile(file);
+        
+        // Add a temporary ID for the frontend
+        stats.put("id", "guest-" + System.currentTimeMillis());
+        
         return ResponseEntity.ok(stats);
     }
 
-    // // Get metrics for a chat
-    // @GetMapping("/chat/{chatId}")
-    // public ResponseEntity<List<ChatMetrics>> getMetrics(@PathVariable Long chatId) {
-    //     List<ChatMetrics> metrics = chatMetricsService.getMetricsByChatId(chatId);
-    //     return ResponseEntity.ok(metrics);
-    // }
+    // Get metrics for a chat (authenticated users)
+    @GetMapping("/chat/{chatId}")
+    public ResponseEntity<Map<String, Object>> getMetrics(
+            @PathVariable Long chatId,
+            @AuthenticationPrincipal User currentUser) {
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
+        }
+
+        Map<String, Object> stats = chatMetricsService.getStatsByGroupId(chatId, currentUser.getId());
+        
+        if (stats == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        return ResponseEntity.ok(stats);
+    }
 
 }
 

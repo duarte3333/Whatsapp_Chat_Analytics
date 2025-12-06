@@ -1,18 +1,16 @@
 package com.whatsappanalytics.whatsapp_analytics_backend.service;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.security.KeyStore;
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import javax.net.ssl.SSLContext;
+import java.util.Optional;
 
 import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.LinkedMultiValueMap;
@@ -22,6 +20,10 @@ import org.springframework.web.multipart.MultipartFile;
 
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Qualifier;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.whatsappanalytics.whatsapp_analytics_backend.model.ChatMetrics;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.GroupChat;
@@ -36,16 +38,19 @@ public class ChatMetricsService {
     private final String pythonServiceUrl = "https://localhost:5050/analyze";
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
+    private final ObjectMapper objectMapper;
     
 
     public ChatMetricsService(
         ChatMetricsRepository chatMetricsRepository,
         GroupChatRepository groupChatRepository,
-        @Qualifier("pythonRestTemplate") RestTemplate restTemplate
+        @Qualifier("pythonRestTemplate") RestTemplate restTemplate,
+        ObjectMapper objectMapper
     ) {
-    this.chatMetricsRepository = chatMetricsRepository;
-    this.groupChatRepository = groupChatRepository;
-    this.restTemplate = restTemplate;
+        this.chatMetricsRepository = chatMetricsRepository;
+        this.groupChatRepository = groupChatRepository;
+        this.restTemplate = restTemplate;
+        this.objectMapper = objectMapper;
     }
 
     public Map<String, Object> processAnonymousFile(MultipartFile file) {
@@ -59,54 +64,131 @@ public class ChatMetricsService {
         return stats != null ? stats : Collections.emptyMap();
     }
 
-    public ChatMetrics processAndSaveMetrics(MultipartFile file, User currentUser) {
+    public Map<String, Object> processAndSaveMetrics(MultipartFile file, User currentUser) {
         Map<String, Object> stats = sendFileToPython(file);
         if (stats == null || stats.isEmpty()) {
             throw new RuntimeException("Python service returned no data");
         }
 
-        // 1. Fetch or create GroupChat
+        // 1. Create GroupChat
         GroupChat newChat = new GroupChat();
-        // Extract title from stats (Python service now provides this)
         String title = (String) stats.getOrDefault("title", "Chat " + System.currentTimeMillis());
         newChat.setTitle(title);
         newChat.setUserId(currentUser.getId());
 
-        // Extract participants_count from stats
-        Object participantsCountObj = stats.get("participants_count");
-        int participantsCount = 0;
-        if (participantsCountObj instanceof Integer) {
-            participantsCount = (Integer) participantsCountObj;
-        } else if (participantsCountObj instanceof Number) {
-            participantsCount = ((Number) participantsCountObj).intValue();
-        }
+        int participantsCount = extractInt(stats.get("participants_count"));
         newChat.setParticipantsCount(participantsCount);
         newChat.setCreatedAt(LocalDateTime.now());
         groupChatRepository.save(newChat);
 
-        // 2. Create ChatMetrics from stats returned by Python service
+        // 2. Create ChatMetrics with all data including chart data
         ChatMetrics chatMetrics = new ChatMetrics();
         chatMetrics.setGroupChatId(newChat.getId());
+        chatMetrics.setTotalMessages(extractInt(stats.get("total_messages")));
+        chatMetrics.setTopUser((String) stats.getOrDefault("top_user", "Unknown"));
+        chatMetrics.setParticipantsCount(participantsCount);
+        chatMetrics.setMostActiveDay((String) stats.get("mostActiveDay"));
+        chatMetrics.setPeakHour((String) stats.get("peakHour"));
 
-        // Extract total_messages from stats
-        Object totalMessagesObj = stats.get("total_messages");
-        int totalMessages = 0;
-        if (totalMessagesObj instanceof Integer) {
-            totalMessages = (Integer) totalMessagesObj;
-        } else if (totalMessagesObj instanceof Number) {
-            totalMessages = ((Number) totalMessagesObj).intValue();
+        // Save chart data as JSON
+        try {
+            if (stats.get("dailyMessages") != null) {
+                chatMetrics.setDailyMessagesJson(objectMapper.writeValueAsString(stats.get("dailyMessages")));
+            }
+            if (stats.get("hourlyData") != null) {
+                chatMetrics.setHourlyDataJson(objectMapper.writeValueAsString(stats.get("hourlyData")));
+            }
+            if (stats.get("participantData") != null) {
+                chatMetrics.setParticipantDataJson(objectMapper.writeValueAsString(stats.get("participantData")));
+            }
+            if (stats.get("emojiUsage") != null) {
+                chatMetrics.setEmojiUsageJson(objectMapper.writeValueAsString(stats.get("emojiUsage")));
+            }
+        } catch (JsonProcessingException e) {
+            System.err.println("Error serializing chart data: " + e.getMessage());
         }
-        chatMetrics.setTotalMessages(totalMessages);
-
-        // Extract top_user from stats (Python service now provides this)
-        String topUser = (String) stats.getOrDefault("top_user", "Unknown");
-        chatMetrics.setTopUser(topUser);
 
         chatMetrics.setCreatedAt(LocalDateTime.now());
         chatMetrics.setLastUpdated(LocalDateTime.now());
 
         // 3. Persist ChatMetrics
-        return chatMetricsRepository.save(chatMetrics);
+        chatMetricsRepository.save(chatMetrics);
+        
+        // 4. Add the saved chat ID to stats for frontend navigation
+        stats.put("id", newChat.getId());
+        stats.put("chatId", newChat.getId());
+        
+        return stats;
+    }
+
+    /**
+     * Get stats for a group chat by ID
+     */
+    public Map<String, Object> getStatsByGroupId(Long groupId, Long userId) {
+        // Verify group belongs to user
+        GroupChat group = groupChatRepository.findByIdAndUserId(groupId, userId);
+        if (group == null) {
+            return null;
+        }
+
+        ChatMetrics metrics = chatMetricsRepository.findByGroupChatId(groupId);
+        if (metrics == null) {
+            return null;
+        }
+
+        // Build response map
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("id", groupId);
+        stats.put("chatId", groupId);
+        stats.put("title", group.getTitle());
+        stats.put("total_messages", metrics.getTotalMessages());
+        stats.put("totalMessages", metrics.getTotalMessages());
+        stats.put("participants_count", metrics.getParticipantsCount());
+        stats.put("top_user", metrics.getTopUser());
+        stats.put("topUser", metrics.getTopUser());
+        stats.put("mostActiveDay", metrics.getMostActiveDay());
+        stats.put("peakHour", metrics.getPeakHour());
+
+        // Deserialize JSON chart data
+        try {
+            if (metrics.getDailyMessagesJson() != null) {
+                stats.put("dailyMessages", objectMapper.readValue(
+                    metrics.getDailyMessagesJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getHourlyDataJson() != null) {
+                stats.put("hourlyData", objectMapper.readValue(
+                    metrics.getHourlyDataJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getParticipantDataJson() != null) {
+                stats.put("participantData", objectMapper.readValue(
+                    metrics.getParticipantDataJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getEmojiUsageJson() != null) {
+                stats.put("emojiUsage", objectMapper.readValue(
+                    metrics.getEmojiUsageJson(), 
+                    new TypeReference<Map<String, Object>>() {}
+                ));
+            }
+        } catch (JsonProcessingException e) {
+            System.err.println("Error deserializing chart data: " + e.getMessage());
+        }
+
+        return stats;
+    }
+
+    private int extractInt(Object obj) {
+        if (obj instanceof Integer) {
+            return (Integer) obj;
+        } else if (obj instanceof Number) {
+            return ((Number) obj).intValue();
+        }
+        return 0;
     }
 
 
