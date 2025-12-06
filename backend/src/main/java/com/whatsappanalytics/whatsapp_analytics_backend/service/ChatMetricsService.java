@@ -92,6 +92,7 @@ public class ChatMetricsService {
 
         // Save chart data as JSON
         try {
+            // Legacy chart data
             if (stats.get("dailyMessages") != null) {
                 chatMetrics.setDailyMessagesJson(objectMapper.writeValueAsString(stats.get("dailyMessages")));
             }
@@ -103,6 +104,22 @@ public class ChatMetricsService {
             }
             if (stats.get("emojiUsage") != null) {
                 chatMetrics.setEmojiUsageJson(objectMapper.writeValueAsString(stats.get("emojiUsage")));
+            }
+            // New chart data
+            if (stats.get("messagesPerUser") != null) {
+                chatMetrics.setMessagesPerUserJson(objectMapper.writeValueAsString(stats.get("messagesPerUser")));
+            }
+            if (stats.get("weeklyVolume") != null) {
+                chatMetrics.setWeeklyVolumeJson(objectMapper.writeValueAsString(stats.get("weeklyVolume")));
+            }
+            if (stats.get("heatmapData") != null) {
+                chatMetrics.setHeatmapDataJson(objectMapper.writeValueAsString(stats.get("heatmapData")));
+            }
+            if (stats.get("messageTypeBreakdown") != null) {
+                chatMetrics.setMessageTypeBreakdownJson(objectMapper.writeValueAsString(stats.get("messageTypeBreakdown")));
+            }
+            if (stats.get("dateRange") != null) {
+                chatMetrics.setDateRangeJson(objectMapper.writeValueAsString(stats.get("dateRange")));
             }
         } catch (JsonProcessingException e) {
             System.err.println("Error serializing chart data: " + e.getMessage());
@@ -151,6 +168,7 @@ public class ChatMetricsService {
 
         // Deserialize JSON chart data
         try {
+            // Legacy chart data
             if (metrics.getDailyMessagesJson() != null) {
                 stats.put("dailyMessages", objectMapper.readValue(
                     metrics.getDailyMessagesJson(), 
@@ -172,6 +190,37 @@ public class ChatMetricsService {
             if (metrics.getEmojiUsageJson() != null) {
                 stats.put("emojiUsage", objectMapper.readValue(
                     metrics.getEmojiUsageJson(), 
+                    new TypeReference<Map<String, Object>>() {}
+                ));
+            }
+            // New chart data
+            if (metrics.getMessagesPerUserJson() != null) {
+                stats.put("messagesPerUser", objectMapper.readValue(
+                    metrics.getMessagesPerUserJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getWeeklyVolumeJson() != null) {
+                stats.put("weeklyVolume", objectMapper.readValue(
+                    metrics.getWeeklyVolumeJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getHeatmapDataJson() != null) {
+                stats.put("heatmapData", objectMapper.readValue(
+                    metrics.getHeatmapDataJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getMessageTypeBreakdownJson() != null) {
+                stats.put("messageTypeBreakdown", objectMapper.readValue(
+                    metrics.getMessageTypeBreakdownJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getDateRangeJson() != null) {
+                stats.put("dateRange", objectMapper.readValue(
+                    metrics.getDateRangeJson(), 
                     new TypeReference<Map<String, Object>>() {}
                 ));
             }

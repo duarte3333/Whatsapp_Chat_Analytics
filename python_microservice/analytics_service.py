@@ -3,11 +3,13 @@ import zipfile
 import tempfile
 import os
 import sys
+import re
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 import glob
 import traceback
 import pandas as pd
+import emoji as emoji_lib
 
 # Add stats_computation directory to Python path to import parser
 stats_computation_path = os.path.join(os.path.dirname(__file__), '..', 'stats_computation')
@@ -27,7 +29,7 @@ load_dotenv()
 app = Flask(__name__)
 
 def compute_chart_data(df):
-    """Compute aggregated data for frontend charts."""
+    """Compute all aggregated data for frontend charts."""
     
     # Ensure datetime column exists
     if 'datetime' not in df.columns and 'timestamp' in df.columns:
@@ -35,14 +37,89 @@ def compute_chart_data(df):
     elif 'datetime' in df.columns:
         df['datetime'] = pd.to_datetime(df['datetime'], errors='coerce')
     
-    # === Daily messages (by day of week) ===
+    # Drop rows with invalid datetime
+    df = df.dropna(subset=['datetime'])
+    
+    # Add helper columns
+    df['day_of_week'] = df['datetime'].dt.dayofweek  # 0=Mon, 6=Sun
+    df['day_name'] = df['datetime'].dt.day_name()
+    df['hour'] = df['datetime'].dt.hour
+    df['week_start'] = df['datetime'].dt.to_period('W-MON').dt.start_time
+    
+    # ========== 1. MESSAGES PER USER (for bar chart & pie chart) ==========
+    sender_counts = df['sender'].value_counts()
+    messages_per_user = [
+        {"user": str(name), "count": int(count)}
+        for name, count in sender_counts.items()
+    ]
+    
+    # ========== 2. WEEKLY VOLUME (for line chart) ==========
+    weekly = df.groupby('week_start').size().reset_index(name='count')
+    weekly = weekly.sort_values('week_start')
+    weekly_volume = [
+        {
+            "week": f"W{i+1}",
+            "weekStart": row['week_start'].strftime('%b %d, %Y'),
+            "count": int(row['count'])
+        }
+        for i, (_, row) in enumerate(weekly.iterrows())
+    ]
+    
+    # ========== 3. HEATMAP DATA (7 days x 24 hours) ==========
+    heatmap = df.groupby(['day_of_week', 'hour']).size().reset_index(name='count')
+    heatmap_data = []
+    for day in range(7):
+        for hour in range(24):
+            match = heatmap[(heatmap['day_of_week'] == day) & (heatmap['hour'] == hour)]
+            count = int(match['count'].sum()) if not match.empty else 0
+            heatmap_data.append({"day": day, "hour": hour, "count": count})
+    
+    # ========== 4. MESSAGE TYPE BREAKDOWN (for radar chart) ==========
+    def count_emojis(text):
+        if pd.isna(text):
+            return 0
+        return len([c for c in str(text) if c in emoji_lib.EMOJI_DATA])
+    
+    def is_media_message(text):
+        if pd.isna(text):
+            return False
+        text = str(text).lower()
+        media_patterns = ['<media omitted>', 'image omitted', 'video omitted', 
+                         'audio omitted', 'sticker omitted', 'gif omitted',
+                         '<mídia omitida>', '<media omesso>']
+        return any(pattern in text for pattern in media_patterns)
+    
+    message_col = 'message' if 'message' in df.columns else 'content'
+    message_type_breakdown = []
+    
+    for user in sender_counts.head(10).index:  # Top 10 users
+        user_df = df[df['sender'] == user]
+        user_messages = user_df[message_col] if message_col in user_df.columns else pd.Series([])
+        
+        total = len(user_df)
+        media_count = sum(1 for msg in user_messages if is_media_message(msg))
+        emoji_count = sum(count_emojis(msg) for msg in user_messages)
+        text_count = total - media_count
+        
+        message_type_breakdown.append({
+            "user": str(user),
+            "text": int(text_count),
+            "media": int(media_count),
+            "emojis": int(emoji_count),
+            "all": int(total)
+        })
+    
+    # ========== 5. DATE RANGE ==========
+    date_range = {
+        "startDate": df['datetime'].min().strftime('%b %d, %Y') if not df.empty else "N/A",
+        "endDate": df['datetime'].max().strftime('%b %d, %Y') if not df.empty else "N/A"
+    }
+    
+    # ========== LEGACY: Daily messages (by day of week) ==========
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     day_short = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
     
-    if 'day_of_week' not in df.columns:
-        df['day_of_week'] = df['datetime'].dt.day_name()
-    
-    daily_counts = df['day_of_week'].value_counts()
+    daily_counts = df['day_name'].value_counts()
     daily_messages = [
         {"day": day_short[i], "messages": int(daily_counts.get(day, 0))}
         for i, day in enumerate(day_order)
@@ -55,10 +132,7 @@ def compute_chart_data(df):
     else:
         most_active_day = "Unknown"
     
-    # === Hourly distribution ===
-    if 'hour' not in df.columns:
-        df['hour'] = df['datetime'].dt.hour
-    
+    # ========== LEGACY: Hourly distribution ==========
     hourly_data = [
         {"hour": "0-6", "count": int(df[(df['hour'] >= 0) & (df['hour'] < 6)].shape[0])},
         {"hour": "6-12", "count": int(df[(df['hour'] >= 6) & (df['hour'] < 12)].shape[0])},
@@ -71,8 +145,7 @@ def compute_chart_data(df):
     peak_idx = max(range(4), key=lambda i: hourly_data[i]["count"])
     peak_hour = hour_labels[peak_idx]
     
-    # === Participant data (top 4 + others) ===
-    sender_counts = df['sender'].value_counts()
+    # ========== LEGACY: Participant data (top 4 + others) ==========
     colors = [
         "hsl(var(--chart-1))",
         "hsl(var(--chart-2))",
@@ -84,7 +157,7 @@ def compute_chart_data(df):
     participant_data = []
     for i, (name, count) in enumerate(sender_counts.head(4).items()):
         participant_data.append({
-            "name": name,
+            "name": str(name),
             "value": int(count),
             "color": colors[i]
         })
@@ -98,6 +171,13 @@ def compute_chart_data(df):
         })
     
     return {
+        # New chart data
+        "messagesPerUser": messages_per_user,
+        "weeklyVolume": weekly_volume,
+        "heatmapData": heatmap_data,
+        "messageTypeBreakdown": message_type_breakdown,
+        "dateRange": date_range,
+        # Legacy chart data (for backward compatibility)
         "dailyMessages": daily_messages,
         "hourlyData": hourly_data,
         "participantData": participant_data,
@@ -180,14 +260,22 @@ def analyze_zip():
 
             # Build response with all data for frontend
             stats = {
-                # Basic stats
+                # ========== BASIC STATS ==========
                 "total_messages": total_messages,
                 "messageCount": total_messages,
                 "participants_count": participants_count,
                 "top_user": top_user,
                 "title": group_title,
                 "emojiUsage": emoji_usage,
-                # Chart data
+                
+                # ========== NEW CHART DATA ==========
+                "messagesPerUser": chart_data["messagesPerUser"],
+                "weeklyVolume": chart_data["weeklyVolume"],
+                "heatmapData": chart_data["heatmapData"],
+                "messageTypeBreakdown": chart_data["messageTypeBreakdown"],
+                "dateRange": chart_data["dateRange"],
+                
+                # ========== LEGACY CHART DATA (backward compatibility) ==========
                 "dailyMessages": chart_data["dailyMessages"],
                 "hourlyData": chart_data["hourlyData"],
                 "participantData": chart_data["participantData"],
@@ -195,7 +283,7 @@ def analyze_zip():
                 "peakHour": chart_data["peakHour"],
             }
             
-            app.logger.info(f"Returning stats with chart data")
+            app.logger.info(f"Returning stats with {len(stats)} fields")
             return jsonify(stats)
             
     except Exception as e:

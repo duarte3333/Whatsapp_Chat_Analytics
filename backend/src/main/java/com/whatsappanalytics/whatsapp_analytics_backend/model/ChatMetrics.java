@@ -42,7 +42,7 @@ public class ChatMetrics {
     @Column(name = "peak_hour")
     private String peakHour;
 
-    // JSON columns for chart data
+    // JSON columns for legacy chart data
     @Column(name = "daily_messages", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String dailyMessagesJson;
@@ -58,6 +58,27 @@ public class ChatMetrics {
     @Column(name = "emoji_usage", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
     private String emojiUsageJson;
+
+    // JSON columns for new chart data
+    @Column(name = "messages_per_user", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String messagesPerUserJson;
+
+    @Column(name = "weekly_volume", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String weeklyVolumeJson;
+
+    @Column(name = "heatmap_data", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String heatmapDataJson;
+
+    @Column(name = "message_type_breakdown", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String messageTypeBreakdownJson;
+
+    @Column(name = "date_range", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String dateRangeJson;
 
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
