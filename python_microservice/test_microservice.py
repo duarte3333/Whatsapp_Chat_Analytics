@@ -24,12 +24,12 @@ print(f"Testing with file: {zip_file_path}")
 
 # Disable SSL verification for local testing
 try:
-    with open(zip_file_path, 'rb') as f:
-        files = {'file': (os.path.basename(zip_file_path), f, 'application/zip')}
-        response = requests.post(url, files=files, verify=False)
-    
-    print(f"Status Code: {response.status_code}")
-    print(f"Response: {response.json()}")
+with open(zip_file_path, 'rb') as f:
+    files = {'file': (os.path.basename(zip_file_path), f, 'application/zip')}
+    response = requests.post(url, files=files, verify=False)
+
+print(f"Status Code: {response.status_code}")
+print(f"Response: {response.json()}")
 except requests.exceptions.SSLError as e:
     print(f"SSL Error: {e}")
     print("Trying without SSL verification...")

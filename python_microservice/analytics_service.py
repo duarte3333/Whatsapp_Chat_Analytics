@@ -185,6 +185,7 @@ def compute_chart_data(df):
         "peakHour": peak_hour,
     }
 
+
 @app.route("/analyze", methods=["POST"])
 def analyze_zip():
     file = request.files.get("file")
@@ -292,6 +293,7 @@ def analyze_zip():
         app.logger.error(traceback.format_exc())
         return jsonify({"error": error_msg}), 500
 
+
 @app.route("/llm/analyze", methods=["POST"])
 def llm_analyze():
     data = request.get_json()
@@ -306,6 +308,7 @@ def llm_analyze():
 
     response = model.invoke(question)
     return jsonify({"answer": response.content})
+
 
 if __name__ == "__main__":
     app.run(

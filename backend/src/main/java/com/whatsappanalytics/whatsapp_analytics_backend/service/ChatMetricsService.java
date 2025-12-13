@@ -47,9 +47,9 @@ public class ChatMetricsService {
         @Qualifier("pythonRestTemplate") RestTemplate restTemplate,
         ObjectMapper objectMapper
     ) {
-        this.chatMetricsRepository = chatMetricsRepository;
-        this.groupChatRepository = groupChatRepository;
-        this.restTemplate = restTemplate;
+    this.chatMetricsRepository = chatMetricsRepository;
+    this.groupChatRepository = groupChatRepository;
+    this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
     }
 

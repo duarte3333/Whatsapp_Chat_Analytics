@@ -66,8 +66,8 @@ class AuthenticationServiceTest {
 
         User user = authService.signup(registerDto);
 
-        assertEquals(registerDto.getUsername(), user.getUsername());
-        assertEquals(registerDto.getEmail(), user.getEmail());
+        assertEquals(registerDto.getUsername(), user.getDisplayName());  // Check display name
+        assertEquals(registerDto.getEmail(), user.getUsername());        // getUsername() now returns email
         assertFalse(user.isEnabled());
         assertNotNull(user.getVerificationCode());
         assertNotNull(user.getVerificationCodeExpiresAt());

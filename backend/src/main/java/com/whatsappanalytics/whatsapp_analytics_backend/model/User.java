@@ -18,6 +18,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import jakarta.persistence.GeneratedValue;
+import lombok.AccessLevel;
 
 
 @Entity
@@ -28,6 +29,7 @@ public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
+    @Getter(AccessLevel.NONE)
     @Column(unique = true, nullable = false)
     private String username;
     @Column(unique = true, nullable = false)
@@ -83,4 +85,12 @@ public class User implements UserDetails {
         return enabled;
     }
 
+    @Override
+    public String getUsername() {
+        return email;
+    }
+
+    public String getDisplayName() {
+        return username;
+    }
 }

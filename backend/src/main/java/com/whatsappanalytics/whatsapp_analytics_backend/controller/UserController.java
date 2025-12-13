@@ -50,7 +50,7 @@ public class UserController {
 
         List<GroupChat> userChats = groupChatRepository.findByUserId(currentUser.getId());
 
-       List<Map<String, Object>> groups = userChats.stream()
+        List<Map<String, Object>> groups = userChats.stream()
         .map(chat -> {
             ChatMetrics metrics = chatMetricsRepository.findByGroupChatId(chat.getId());
 
@@ -65,7 +65,7 @@ public class UserController {
         })
         .toList();
 
-
+        
         return ResponseEntity.ok(groups);
     }
     }
