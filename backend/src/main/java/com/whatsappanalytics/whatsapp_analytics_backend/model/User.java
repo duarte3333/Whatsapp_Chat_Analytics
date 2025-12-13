@@ -18,7 +18,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import jakarta.persistence.GeneratedValue;
-import lombok.AccessLevel;
+
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 
 @Entity
@@ -29,7 +31,6 @@ public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Long id;
-    @Getter(AccessLevel.NONE)
     @Column(unique = true, nullable = false)
     private String username;
     @Column(unique = true, nullable = false)
@@ -85,11 +86,13 @@ public class User implements UserDetails {
         return enabled;
     }
 
+    @JsonIgnore
     @Override
     public String getUsername() {
         return email;
     }
 
+    @JsonGetter("username")
     public String getDisplayName() {
         return username;
     }
