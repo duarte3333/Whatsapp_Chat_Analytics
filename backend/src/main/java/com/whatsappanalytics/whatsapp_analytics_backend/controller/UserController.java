@@ -3,7 +3,9 @@ package com.whatsappanalytics.whatsapp_analytics_backend.controller;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -67,5 +69,34 @@ public class UserController {
 
         
         return ResponseEntity.ok(groups);
+    }
+
+    @DeleteMapping("/groups/{groupId}")
+    public ResponseEntity<?> deleteGroup(@PathVariable Long groupId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
+        
+        // Find the group
+        GroupChat group = groupChatRepository.findById(groupId).orElse(null);
+        
+        if (group == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        // Check if user owns this group
+        if (!group.getUserId().equals(currentUser.getId())) {
+            return ResponseEntity.status(403).body("You don't own this group");
+        }
+        
+        // Delete associated metrics first
+        ChatMetrics metrics = chatMetricsRepository.findByGroupChatId(groupId);
+        if (metrics != null) {
+            chatMetricsRepository.delete(metrics);
+        }
+        
+        // Delete the group
+        groupChatRepository.delete(group);
+        
+        return ResponseEntity.ok().build();
     }
     }
