@@ -35,7 +35,7 @@ import com.whatsappanalytics.whatsapp_analytics_backend.repository.GroupChatRepo
 public class ChatMetricsService {
 
     private final RestTemplate restTemplate;
-    private final String pythonServiceUrl = "https://localhost:5050/analyze";
+    private final String pythonServiceUrl = "http://localhost:5050/analyze";
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
     private final ObjectMapper objectMapper;

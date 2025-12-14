@@ -13,7 +13,7 @@ import org.springframework.web.client.RestTemplate;
 public class ChatLLMService {
 
     private final RestTemplate restTemplate;
-    private final String pythonUrl = "https://localhost:5050/llm/analyze";
+    private final String pythonUrl = "http://localhost:5050/llm/analyze";
 
     public ChatLLMService(@Qualifier("pythonRestTemplate") RestTemplate restTemplate) {
         this.restTemplate = restTemplate;

@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import zipfile
 import tempfile
 import os
@@ -10,6 +11,14 @@ import glob
 import traceback
 import pandas as pd
 import emoji as emoji_lib
+import uuid
+import time
+from threading import Lock
+from cachetools import TTLCache
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import FAISS
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_core.documents import Document
 
 # Add stats_computation directory to Python path to import parser
 stats_computation_path = os.path.join(os.path.dirname(__file__), '..', 'stats_computation')
@@ -27,6 +36,220 @@ except ImportError as e:
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+app.json.ensure_ascii = False
+
+# ============================================================
+# EPHEMERAL RAG CACHE (TTL = 10 minutes)
+# ============================================================
+RAG_CACHE_TTL = 600  # 10 minutes in seconds
+rag_cache = TTLCache(maxsize=100, ttl=RAG_CACHE_TTL)
+rag_cache_lock = Lock()
+
+
+def create_rag_session(df, session_id=None):
+    """Create a RAG session from chat DataFrame with TTL expiration."""
+    
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    
+    # Convert messages to documents
+    message_col = 'message' if 'message' in df.columns else 'content'
+    documents = []
+    
+    for _, row in df.iterrows():
+        # Create document with metadata
+        content = f"[{row.get('datetime', 'Unknown')}] {row['sender']}: {row.get(message_col, '')}"
+        doc = Document(
+            page_content=content,
+            metadata={
+                "sender": row['sender'],
+                "datetime": str(row.get('datetime', '')),
+            }
+        )
+        documents.append(doc)
+    
+    # Split into chunks for better retrieval
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=100,
+        separators=["\n\n", "\n", " "]
+    )
+    splits = text_splitter.split_documents(documents)
+    
+    # Create embeddings and vector store
+    embeddings = OpenAIEmbeddings(api_key=os.getenv("OPENAI_API_KEY"))
+    vectorstore = FAISS.from_documents(splits, embeddings)
+    
+    # Store in cache with TTL
+    with rag_cache_lock:
+        rag_cache[session_id] = {
+            "vectorstore": vectorstore,
+            "created_at": time.time(),
+            "message_count": len(df),
+            "participants": list(df['sender'].unique()),
+        }
+    
+    app.logger.info(f"Created RAG session {session_id} with {len(splits)} chunks (expires in {RAG_CACHE_TTL}s)")
+    return session_id
+
+
+def get_rag_session(session_id):
+    """Get RAG session if it exists and hasn't expired."""
+    with rag_cache_lock:
+        return rag_cache.get(session_id)
+
+
+# ============================================================
+# NEW ENDPOINTS FOR EPHEMERAL RAG
+# ============================================================
+
+@app.route("/rag/upload", methods=["POST"])
+def rag_upload():
+    """Upload a chat for ephemeral RAG. Returns session_id valid for 10 minutes."""
+    file = request.files.get("file")
+    if file is None or not file.filename.endswith(".zip"):
+        return jsonify({"error": "Invalid file. Please upload a ZIP file."}), 400
+
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Save and extract ZIP
+            zip_path = os.path.join(tmpdir, file.filename)
+            file.save(zip_path)
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(tmpdir)
+
+            # Find chat file
+            chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+            if not chat_files:
+                return jsonify({"error": "No chat file found in ZIP"}), 400
+
+            # Parse chat
+            parser = WhatsAppChatParser()
+            df = parser.parse_to_csv(chat_files[0])
+            
+            if df.empty:
+                return jsonify({"error": "No messages found in chat"}), 400
+
+            # Create RAG session
+            session_id = create_rag_session(df)
+            group_title = parser.group_name if parser.group_name else "WhatsApp Chat"
+
+            #convert python dictionary to json
+            return jsonify({
+                "session_id": session_id,
+                "title": group_title,
+                "message_count": len(df),
+                "participants": list(df['sender'].unique()),
+                "expires_in_seconds": RAG_CACHE_TTL,
+                "message": f"RAG session created. Valid for {RAG_CACHE_TTL // 60} minutes."
+            })
+
+    except Exception as e:
+        app.logger.error(f"RAG upload error: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/rag/ask", methods=["POST"])
+def rag_ask():
+    """Ask a question about an uploaded chat using RAG."""
+    data = request.get_json()
+    session_id = data.get("session_id")
+    question = data.get("question")
+
+    if not session_id or not question:
+        return jsonify({"error": "session_id and question are required"}), 400
+
+    # Get RAG session
+    session = get_rag_session(session_id)
+    if session is None:
+        return jsonify({
+            "error": "Session expired or not found. Please upload the chat again.",
+            "expired": True
+        }), 404
+
+    try:
+        vectorstore = session["vectorstore"]
+        
+        # Retrieve relevant documents
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 50})
+        relevant_docs = retriever.invoke(question)
+        
+        # Build context from retrieved documents
+        context = "\n".join([doc.page_content for doc in relevant_docs])
+        
+        # Create prompt with context
+        prompt = f"""You are an expert WhatsApp chat analyst. Analyze the conversations and provide accurate, evidence-based answers.
+
+        CHAT MESSAGES:
+        {context}
+
+        QUESTION: {question}
+
+        INSTRUCTIONS:
+        - Base your answer ONLY on the messages provided above
+        - When identifying people, look for patterns across multiple messages
+        - For questions about "who does X most", count occurrences when possible
+        - When quoting messages, use this format: [Sender] said "message text" on 19 Nov 2022
+        - Convert timestamps like 2022-11-19 to readable dates like 19 Nov 2022
+        - Write naturally with actual line breaks, not escape sequences
+        - Write flowing paragraphs, not code-like output
+        - If the information is insufficient, say "Based on the available messages, I cannot determine this with confidence"
+        - Respond in the same language as the chat messages
+        - Be concise but cite specific examples
+
+        ANSWER:"""
+
+        # Generate answer with LLM
+        model = ChatOpenAI(
+            model="gpt-4o-mini",
+            api_key=os.getenv("OPENAI_API_KEY"),
+            temperature=0.0 #lower = more predictable, higher = more creative
+        )
+        
+        response = model.invoke(prompt)
+        
+        # Calculate remaining TTL
+        time_elapsed = time.time() - session["created_at"]
+        time_remaining = max(0, RAG_CACHE_TTL - time_elapsed)
+
+        return jsonify({
+            "answer": response.content,
+            "sources_count": len(relevant_docs),
+            "session_id": session_id,
+            "expires_in_seconds": int(time_remaining),
+        })
+
+    except Exception as e:
+        app.logger.error(f"RAG ask error: {e}")
+        app.logger.error(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/rag/status/<session_id>", methods=["GET"])
+def rag_status(session_id):
+    """Check if a RAG session is still valid."""
+    session = get_rag_session(session_id)
+    
+    if session is None:
+        return jsonify({
+            "valid": False,
+            "message": "Session expired or not found"
+        })
+    
+    time_elapsed = time.time() - session["created_at"]
+    time_remaining = max(0, RAG_CACHE_TTL - time_elapsed)
+    
+    return jsonify({
+        "valid": True,
+        "session_id": session_id,
+        "message_count": session["message_count"],
+        "participants": session["participants"],
+        "expires_in_seconds": int(time_remaining),
+    })
+
 
 def compute_chart_data(df):
     """Compute all aggregated data for frontend charts."""
@@ -188,9 +411,23 @@ def compute_chart_data(df):
 
 @app.route("/analyze", methods=["POST"])
 def analyze_zip():
+    """
+    Upload a WhatsApp chat ZIP file and get metrics + RAG session.
+    
+    Query params:
+        - enable_rag: "true" to create RAG session (default: true)
+    
+    Returns:
+        - All metrics/chart data
+        - session_id for RAG queries (if enable_rag=true)
+        - expires_in_seconds: TTL for RAG session
+    """
     file = request.files.get("file")
     if file is None or not file.filename.endswith(".zip"):
         return jsonify({"error": "Invalid file"}), 400
+
+    # Check if RAG should be enabled (default: false for speed)
+    enable_rag = request.args.get("enable_rag", "false").lower() == "true"
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -259,6 +496,19 @@ def analyze_zip():
             # Compute chart data
             chart_data = compute_chart_data(df)
 
+            # ========== CREATE RAG SESSION ==========
+            session_id = None
+            expires_in_seconds = None
+            
+            if enable_rag:
+                try:
+                    session_id = create_rag_session(df)
+                    expires_in_seconds = RAG_CACHE_TTL
+                    app.logger.info(f"Created RAG session: {session_id}")
+                except Exception as rag_error:
+                    app.logger.warning(f"Failed to create RAG session: {rag_error}")
+                    # Don't fail the whole request, just skip RAG
+
             # Build response with all data for frontend
             stats = {
                 # ========== BASIC STATS ==========
@@ -268,6 +518,10 @@ def analyze_zip():
                 "top_user": top_user,
                 "title": group_title,
                 "emojiUsage": emoji_usage,
+                
+                # ========== RAG SESSION ==========
+                "session_id": session_id,
+                "expires_in_seconds": expires_in_seconds,
                 
                 # ========== NEW CHART DATA ==========
                 "messagesPerUser": chart_data["messagesPerUser"],
@@ -284,7 +538,7 @@ def analyze_zip():
                 "peakHour": chart_data["peakHour"],
             }
             
-            app.logger.info(f"Returning stats with {len(stats)} fields")
+            app.logger.info(f"Returning stats with {len(stats)} fields, RAG enabled: {enable_rag}")
             return jsonify(stats)
             
     except Exception as e:
@@ -292,6 +546,16 @@ def analyze_zip():
         app.logger.error(error_msg)
         app.logger.error(traceback.format_exc())
         return jsonify({"error": error_msg}), 500
+
+
+# ============================================================
+# ALIAS ENDPOINTS (for frontend compatibility)
+# ============================================================
+
+@app.route("/metrics/chat/upload-anonymous", methods=["POST"])
+def upload_anonymous():
+    """Alias for /analyze - used by frontend GuestUpload."""
+    return analyze_zip()
 
 
 @app.route("/llm/analyze", methods=["POST"])
@@ -314,6 +578,5 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=5050,
-        ssl_context=("certs/cert.pem", "certs/key.pem"),
         debug=True
     )
