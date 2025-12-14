@@ -173,40 +173,51 @@ def rag_ask():
     try:
         vectorstore = session["vectorstore"]
         
+        # Get total number of documents in the vectorstore
+        total_docs = vectorstore.index.ntotal
+        
+        # Use all docs if less than 150, otherwise cap at 150
+        k = min(total_docs, 200)
+        app.logger.info(f"RAG query: total_docs={total_docs}, using k={k}")
+        
         # Retrieve relevant documents
-        retriever = vectorstore.as_retriever(search_kwargs={"k": 50})
+        retriever = vectorstore.as_retriever(search_kwargs={"k": k})
         relevant_docs = retriever.invoke(question)
         
         # Build context from retrieved documents
         context = "\n".join([doc.page_content for doc in relevant_docs])
         
         # Create prompt with context
-        prompt = f"""You are an expert WhatsApp chat analyst. Analyze the conversations and provide accurate, evidence-based answers.
+        prompt = f"""You're responsible to analyzed this WhatsApp group. Give fun, engaging insights!
 
         CHAT MESSAGES:
         {context}
 
         QUESTION: {question}
 
-        INSTRUCTIONS:
-        - Base your answer ONLY on the messages provided above
-        - When identifying people, look for patterns across multiple messages
-        - For questions about "who does X most", count occurrences when possible
-        - When quoting messages, use this format: [Sender] said "message text" on 19 Nov 2022
-        - Convert timestamps like 2022-11-19 to readable dates like 19 Nov 2022
-        - Write naturally with actual line breaks, not escape sequences
-        - Write flowing paragraphs, not code-like output
-        - If the information is insufficient, say "Based on the available messages, I cannot determine this with confidence"
-        - Respond in the same language as the chat messages
-        - Be concise but cite specific examples
-
-        ANSWER:"""
+        YOUR STYLE:
+        - Be CASUAL and CONVERSATIONAL
+        - Keep it SHORT (2-4 sentences max, unless they ask for details)
+        - Be SPONTANEOUS and FUN - add personality!
+        - Use the same language as the chat (Portuguese/English/etc.)
+        - Drop a specific quote or two as proof, but keep it natural
+        - NO bullet points, NO formal structure, NO "In conclusion..."
+        - NO essay format - just quick, punchy insights
+        - Be engaging and interesting
+        - ANSWER IN THE SAME LANGUAGE AS THE CHAT, check variations(e.g PT PT is not PT BR) 
+        
+        SMART ANALYSIS (do this internally, don't explain it):
+        - Reactions (ahahah, 🤣) AFTER a message = that person was funny
+        - "That's funny" = they're reacting, not being funny
+        - Look at who CAUSES reactions, not who SAYS keywords
+        
+        NOW ANSWER (keep it interesting and brief):"""
 
         # Generate answer with LLM
         model = ChatOpenAI(
             model="gpt-4o-mini",
             api_key=os.getenv("OPENAI_API_KEY"),
-            temperature=0.0 #lower = more predictable, higher = more creative
+            temperature=0.7  # Higher = more creative and spontaneous
         )
         
         response = model.invoke(prompt)
