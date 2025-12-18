@@ -1,6 +1,10 @@
 package com.whatsappanalytics.whatsapp_analytics_backend.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -33,11 +37,8 @@ public class AuthenticationController {
 
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> authenticate(@RequestBody LoginUserDto loginUserDto) {
-        System.out.println("Test Controller");
         User authenticatedUser = authenticationService.authenticate(loginUserDto);
-        System.out.println("Test Controller2");
         String token = jwtService.generateToken(authenticatedUser);
-        System.out.println("Test Controller3");
         long expiresIn = jwtService.getExpirationTime();
         LoginResponse loginResponse = new LoginResponse(token, expiresIn, authenticatedUser);
         return ResponseEntity.ok(loginResponse);
@@ -60,6 +61,30 @@ public class AuthenticationController {
             return ResponseEntity.ok("Verification code resent successfully.");
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+
+    @GetMapping("/user")
+    public ResponseEntity<User> getCurrentUser() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(401).build();
+        }
+
+        try {
+            User user = (User) authentication.getPrincipal();
+
+            if (user == null) {
+                return ResponseEntity.status(401).build();
+            }
+
+            System.out.println("Fetching user info for: " + user.getEmail());
+            return ResponseEntity.ok(user);
+
+        } catch (Exception e) {
+            System.err.println("Error fetching current user: " + e.getMessage());
+            return ResponseEntity.status(401).build();
         }
     }
 

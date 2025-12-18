@@ -63,7 +63,7 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
             System.out.println("OAuth2 login successful for user: " + email);
 
             // Redirect to frontend with token
-            getRedirectStrategy().sendRedirect(request, response, frontendUrl + "?token=" + token);
+            getRedirectStrategy().sendRedirect(request, response, frontendUrl + "/oauth-callback?token=" + token);
 
         } catch (Exception e) {
             System.err.println("Error in OAuth2 authentication: " + e.getMessage());
