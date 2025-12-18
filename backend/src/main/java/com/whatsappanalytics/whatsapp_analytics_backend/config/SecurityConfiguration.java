@@ -21,14 +21,17 @@ public class SecurityConfiguration {
     private final AuthenticationProvider authenticationProvider;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler;
+    private final OAuth2AuthenticationFailureHandler oAuth2FailureHandler;
 
     public SecurityConfiguration(
             AuthenticationProvider authenticationProvider,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler) {
+            OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler,
+            OAuth2AuthenticationFailureHandler oAuth2FailureHandler) {
         this.authenticationProvider = authenticationProvider;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.oAuth2SuccessHandler = oAuth2SuccessHandler;
+        this.oAuth2FailureHandler = oAuth2FailureHandler;
     }
 
     
@@ -51,7 +54,9 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
             .permitAll()
             .anyRequest().authenticated())
         .oauth2Login(oauth2 -> oauth2
-            .successHandler(oAuth2SuccessHandler))
+            .successHandler(oAuth2SuccessHandler)
+            .failureHandler(oAuth2FailureHandler))
+        .formLogin(form -> form.disable())
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .authenticationProvider(authenticationProvider)
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

@@ -37,13 +37,27 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
         OAuth2User oauth2User = (OAuth2User) authentication.getPrincipal();
 
-        String email = oauth2User.getAttribute("email");
-        String name = oauth2User.getAttribute("name");
+        // Extract email - Microsoft may use different attributes
+        String extractedEmail = oauth2User.getAttribute("email");
+        if (extractedEmail == null || extractedEmail.isEmpty()) {
+            extractedEmail = oauth2User.getAttribute("mail");
+        }
+        if (extractedEmail == null || extractedEmail.isEmpty()) {
+            extractedEmail = oauth2User.getAttribute("preferred_username");
+        }
 
-        if (email == null || email.isEmpty()) {
+        String extractedName = oauth2User.getAttribute("name");
+        if (extractedName == null || extractedName.isEmpty()) {
+            extractedName = oauth2User.getAttribute("given_name");
+        }
+
+        if (extractedEmail == null || extractedEmail.isEmpty()) {
             getRedirectStrategy().sendRedirect(request, response, frontendUrl + "?error=email_not_found");
             return;
         }
+
+        final String email = extractedEmail;
+        final String name = extractedName;
 
         try {
             // Find or create user
