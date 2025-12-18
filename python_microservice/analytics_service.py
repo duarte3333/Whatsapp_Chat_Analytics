@@ -274,6 +274,32 @@ def compute_chart_data(df):
     # Drop rows with invalid datetime
     df = df.dropna(subset=['datetime'])
     
+    # ========== FILTER OUT ISOLATED EARLY MESSAGES (3+ month gap) ==========
+    if len(df) > 1:
+        df = df.sort_values('datetime').reset_index(drop=True)
+        first_msg_date = df['datetime'].iloc[0]
+        three_months_later = first_msg_date + pd.DateOffset(months=3)
+        #erase messages with date for first_msg 
+        df = df[df['datetime'] != first_msg_date]
+        
+        # Check if there are messages within 3 months of the first message
+        messages_within_3_months = df[df['datetime'] <= three_months_later]
+        print(f"Messages within 3 months: {len(messages_within_3_months)}")
+        
+        if len(messages_within_3_months) == 1:
+            # Only the first message exists within 3 months, find where activity resumes
+            # Filter out all messages before the first message that has activity within 3 months
+            for i in range(len(df)):
+                current_date = df['datetime'].iloc[i]
+                next_3_months = current_date + pd.DateOffset(months=3)
+                messages_after = df[(df['datetime'] > current_date) & (df['datetime'] <= next_3_months)]
+                
+                if len(messages_after) > 0:
+                    # Found a message with activity within 3 months, keep from here
+                    df = df.iloc[i:].reset_index(drop=True)
+                    app.logger.info(f"Filtered out {i} isolated early message(s) due to 3+ month gap")
+                    break
+    
     # Add helper columns
     df['day_of_week'] = df['datetime'].dt.dayofweek  # 0=Mon, 6=Sun
     df['day_name'] = df['datetime'].dt.day_name()
@@ -292,7 +318,7 @@ def compute_chart_data(df):
     weekly = weekly.sort_values('week_start')
     weekly_volume = [
         {
-            "week": f"W{i+1}",
+            "week": row['week_start'].strftime("%b '%y"),  # e.g., "Jan '24"
             "weekStart": row['week_start'].strftime('%b %d, %Y'),
             "count": int(row['count'])
         }
