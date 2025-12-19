@@ -177,7 +177,7 @@ def rag_ask():
         total_docs = vectorstore.index.ntotal
         
         # Use all docs if less than 150, otherwise cap at 150
-        k = min(total_docs, 200)
+        k = min(total_docs, 250)
         app.logger.info(f"RAG query: total_docs={total_docs}, using k={k}")
         
         # Retrieve relevant documents
@@ -188,30 +188,39 @@ def rag_ask():
         context = "\n".join([doc.page_content for doc in relevant_docs])
         
         # Create prompt with context
-        prompt = f"""You're responsible to analyzed this WhatsApp group. Give fun, engaging insights!
+        #    - ANSWER IN THE SAME LANGUAGE AS THE CHAT, check variations(e.g PT PT is not PT BR) 
+        
+        prompt = f"""You are analyzing this WhatsApp group chat.
 
         CHAT MESSAGES:
         {context}
 
         QUESTION: {question}
 
+        CRITICAL ANALYSIS METHOD (apply to ANY personality question):
+
+        1. REACTION PRINCIPLE:
+        - When analyzing WHO has a trait (funny, charming, smart, annoying, etc.)
+        - Look at how OTHERS REACT to that person's messages
+        - The person who TRIGGERS positive/negative reactions = has the trait
+        - The person who REACTS = is just responding, doesn't have the trait
+
+        3. WHAT TO AVOID:
+        - Always trace back: WHO caused the reaction?
+
+        4. EVIDENCE RULE:
+        - Quote the ORIGINAL message that triggered reactions
+        - Show the reactions it received as proof
+        - Count who gets the MOST reactions of the relevant type
+
         YOUR STYLE:
-        - Be CASUAL and CONVERSATIONAL
+        - Be RATIONAL and CONVERSATIONAL
         - Keep it SHORT (2-4 sentences max, unless they ask for details)
-        - Be SPONTANEOUS and FUN - add personality!
-        - Use the same language as the chat (Portuguese/English/etc.)
-        - Drop a specific quote or two as proof, but keep it natural
-        - NO bullet points, NO formal structure, NO "In conclusion..."
-        - NO essay format - just quick, punchy insights
-        - Be engaging and interesting
-        - ANSWER IN THE SAME LANGUAGE AS THE CHAT, check variations(e.g PT PT is not PT BR) 
-        
-        SMART ANALYSIS (do this internally, don't explain it):
-        - Reactions (ahahah, 🤣) AFTER a message = that person was funny
-        - "That's funny" = they're reacting, not being funny
-        - Look at who CAUSES reactions, not who SAYS keywords
-        
-        NOW ANSWER (keep it interesting and brief):"""
+        - Quote specific messages as evidence
+        - NO bullet points, NO formal structure
+        - Answer in English!
+
+        NOW ANSWER (trace who CAUSES reactions, not who GIVES them):"""
 
         # Generate answer with LLM
         model = ChatOpenAI(
