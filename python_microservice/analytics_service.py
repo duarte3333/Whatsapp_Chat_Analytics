@@ -15,10 +15,8 @@ import uuid
 import time
 from threading import Lock
 from cachetools import TTLCache
-from langchain_openai import OpenAIEmbeddings
-from langchain_community.vectorstores import FAISS
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
+from collections import Counter
+import tiktoken
 
 # Add stats_computation directory to Python path to import parser
 stats_computation_path = os.path.join(os.path.dirname(__file__), '..', 'stats_computation')
@@ -46,51 +44,73 @@ RAG_CACHE_TTL = 600  # 10 minutes in seconds
 rag_cache = TTLCache(maxsize=100, ttl=RAG_CACHE_TTL)
 rag_cache_lock = Lock()
 
+# Token limit for context (128k tokens, leaving room for prompt and response)
+MAX_CONTEXT_TOKENS = 120000  # Leave 8k for prompt template and response
+
+# Initialize tiktoken encoder for gpt-4o-mini
+try:
+    TOKEN_ENCODER = tiktoken.encoding_for_model("gpt-4o-mini")
+except Exception:
+    TOKEN_ENCODER = tiktoken.get_encoding("cl100k_base")
+
+
+def count_tokens(text):
+    """Count tokens in text using tiktoken."""
+    return len(TOKEN_ENCODER.encode(text))
+
 
 def create_rag_session(df, session_id=None):
-    """Create a RAG session from chat DataFrame with TTL expiration."""
+    """Create a RAG session from chat DataFrame with TTL expiration.
+    
+    Instead of using embeddings, we store the most recent messages
+    that fit within the 128k token context window.
+    """
     
     if session_id is None:
         session_id = str(uuid.uuid4())
     
-    # Convert messages to documents
+    # Convert messages to formatted strings
     message_col = 'message' if 'message' in df.columns else 'content'
-    documents = []
     
+    # Sort by datetime to ensure chronological order (most recent last)
+    if 'datetime' in df.columns:
+        df = df.sort_values('datetime')
+    
+    # Format all messages
+    formatted_messages = []
     for _, row in df.iterrows():
-        # Create document with metadata
         content = f"[{row.get('datetime', 'Unknown')}] {row['sender']}: {row.get(message_col, '')}"
-        doc = Document(
-            page_content=content,
-            metadata={
-                "sender": row['sender'],
-                "datetime": str(row.get('datetime', '')),
-            }
-        )
-        documents.append(doc)
+        formatted_messages.append(content)
     
-    # Split into chunks for better retrieval
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=100,
-        separators=["\n\n", "\n", " "]
-    )
-    splits = text_splitter.split_documents(documents)
+    # Take the most recent messages that fit within token limit
+    # Start from the end (most recent) and work backwards
+    selected_messages = []
+    total_tokens = 0
     
-    # Create embeddings and vector store
-    embeddings = OpenAIEmbeddings(api_key=os.getenv("OPENAI_API_KEY"))
-    vectorstore = FAISS.from_documents(splits, embeddings)
+    for msg in reversed(formatted_messages):
+        msg_tokens = count_tokens(msg + "\n")
+        if total_tokens + msg_tokens <= MAX_CONTEXT_TOKENS:
+            selected_messages.insert(0, msg)  # Insert at beginning to maintain order
+            total_tokens += msg_tokens
+        else:
+            break
+    
+    # Join selected messages into context string
+    context_text = "\n".join(selected_messages)
     
     # Store in cache with TTL
     with rag_cache_lock:
         rag_cache[session_id] = {
-            "vectorstore": vectorstore,
+            "context": context_text,
+            "context_tokens": total_tokens,
+            "total_messages": len(df),
+            "included_messages": len(selected_messages),
             "created_at": time.time(),
             "message_count": len(df),
             "participants": list(df['sender'].unique()),
         }
     
-    app.logger.info(f"Created RAG session {session_id} with {len(splits)} chunks (expires in {RAG_CACHE_TTL}s)")
+    app.logger.info(f"Created RAG session {session_id} with {len(selected_messages)}/{len(df)} messages ({total_tokens} tokens, expires in {RAG_CACHE_TTL}s)")
     return session_id
 
 
@@ -154,7 +174,7 @@ def rag_upload():
 
 @app.route("/rag/ask", methods=["POST"])
 def rag_ask():
-    """Ask a question about an uploaded chat using RAG."""
+    """Ask a question about an uploaded chat using the most recent messages."""
     data = request.get_json()
     session_id = data.get("session_id")
     question = data.get("question")
@@ -171,56 +191,63 @@ def rag_ask():
         }), 404
 
     try:
-        vectorstore = session["vectorstore"]
+        # Get the pre-computed context (most recent messages up to 128k tokens)
+        context = session["context"]
+        included_messages = session["included_messages"]
+        total_messages = session["total_messages"]
         
-        # Get total number of documents in the vectorstore
-        total_docs = vectorstore.index.ntotal
+        app.logger.info(f"RAG query: using {included_messages}/{total_messages} most recent messages ({session['context_tokens']} tokens)")
         
-        # Use all docs if less than 150, otherwise cap at 150
-        k = min(total_docs, 250)
-        app.logger.info(f"RAG query: total_docs={total_docs}, using k={k}")
-        
-        # Retrieve relevant documents
-        retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-        relevant_docs = retriever.invoke(question)
-        
-        # Build context from retrieved documents
-        context = "\n".join([doc.page_content for doc in relevant_docs])
-        
-        # Create prompt with context
-        #    - ANSWER IN THE SAME LANGUAGE AS THE CHAT, check variations(e.g PT PT is not PT BR) 
-        
-        prompt = f"""You are analyzing this WhatsApp group chat.
+        prompt = f"""
+        You are an expert conversation analyst analyzing a WhatsApp chat.
 
-        CHAT MESSAGES:
+        Your task is to answer the user's question using ONLY the chat messages provided.
+        Do NOT use outside knowledge. Do NOT guess.
+
+        CHAT MESSAGES
+        (Most recent {included_messages} of {total_messages} total messages):
+        --------------------
         {context}
+        --------------------
 
-        QUESTION: {question}
+        USER QUESTION:
+        {question}
 
-        CRITICAL ANALYSIS METHOD (apply to ANY personality question):
+        ANALYSIS RULES:
+        1. Understand the intent of the question before answering.
+        - "Who talks more?" → count messages / message length.
+        - "Who was more interested?" → look at initiation, response speed, message length, follow-ups.
+        - "Who starts arguments?" → look for disagreements, corrections, debate-starting phrases.
+        - Personality questions → infer patterns ONLY if there is repeated behavioral evidence.
 
-        1. REACTION PRINCIPLE:
-        - When analyzing WHO has a trait (funny, charming, smart, annoying, etc.)
-        - Look at how OTHERS REACT to that person's messages
-        - The person who TRIGGERS positive/negative reactions = has the trait
-        - The person who REACTS = is just responding, doesn't have the trait
+        2. Search the chat for:
+        - Keywords, phrases, emojis, timing patterns, message frequency
+        - Who initiates topics, who responds, and how others react
 
-        3. WHAT TO AVOID:
-        - Always trace back: WHO caused the reaction?
+        3. Use evidence:
+        - Quote short, relevant message snippets when possible
+        - Mention concrete signals (counts, ratios, timing, repetition)
+        - Avoid long quotes — short fragments are enough
 
-        4. EVIDENCE RULE:
-        - Quote the ORIGINAL message that triggered reactions
-        - Show the reactions it received as proof
-        - Count who gets the MOST reactions of the relevant type
+        4. Be honest:
+        - If there is not enough evidence, say so clearly.
+        - If the signal is weak or mixed, say that.
 
-        YOUR STYLE:
-        - Be RATIONAL and CONVERSATIONAL
-        - Keep it SHORT (2-4 sentences max, unless they ask for details)
-        - Quote specific messages as evidence
-        - NO bullet points, NO formal structure
-        - Answer in English!
+        RESPONSE STYLE:
+        - Confident but neutral (no moral judgment)
+        - Insightful and human-sounding (like a smart friend analyzing chats)
+        - Short and punchy (2–4 sentences)
+        - Natural language, NOT bullet points
+        - Answer in the SAME language as the question (not the chat)
 
-        NOW ANSWER (trace who CAUSES reactions, not who GIVES them):"""
+        OUTPUT FORMAT:
+        - Start with a direct answer to the question
+        - Follow with 1–2 concrete observations
+        - Include quotes or measurable signals when relevant
+
+        FINAL ANSWER:
+        """
+
 
         # Generate answer with LLM
         model = ChatOpenAI(
@@ -237,7 +264,8 @@ def rag_ask():
 
         return jsonify({
             "answer": response.content,
-            "sources_count": len(relevant_docs),
+            "messages_used": included_messages,
+            "total_messages": total_messages,
             "session_id": session_id,
             "expires_in_seconds": int(time_remaining),
         })
@@ -266,6 +294,8 @@ def rag_status(session_id):
         "valid": True,
         "session_id": session_id,
         "message_count": session["message_count"],
+        "included_messages": session["included_messages"],
+        "context_tokens": session["context_tokens"],
         "participants": session["participants"],
         "expires_in_seconds": int(time_remaining),
     })
@@ -378,7 +408,46 @@ def compute_chart_data(df):
             "all": int(total)
         })
     
-    # ========== 5. DATE RANGE ==========
+    # ========== 5. TOP EMOJIS (overall and per user) ==========
+    def extract_emojis(text):
+        """Extract all emojis from text as a list."""
+        if pd.isna(text):
+            return []
+        return [c for c in str(text) if c in emoji_lib.EMOJI_DATA]
+    
+    # Count all emojis in the chat
+    all_emojis = []
+    for msg in df[message_col]:
+        all_emojis.extend(extract_emojis(msg))
+    
+    # Get top 5 emojis overall
+    emoji_counter = Counter(all_emojis)
+    top_emojis_overall = [
+        {"emoji": emoji, "count": count}
+        for emoji, count in emoji_counter.most_common(5)
+    ]
+    
+    # Get top 5 emojis per user
+    top_emojis_per_user = []
+    for user in sender_counts.index:  # All users
+        user_messages = df[df['sender'] == user][message_col]
+        user_emojis = []
+        for msg in user_messages:
+            user_emojis.extend(extract_emojis(msg))
+        
+        user_emoji_counter = Counter(user_emojis)
+        top_5 = [
+            {"emoji": emoji, "count": count}
+            for emoji, count in user_emoji_counter.most_common(5)
+        ]
+        
+        top_emojis_per_user.append({
+            "user": str(user),
+            "totalEmojis": len(user_emojis),
+            "topEmojis": top_5
+        })
+    
+    # ========== 6. DATE RANGE ==========
     date_range = {
         "startDate": df['datetime'].min().strftime('%b %d, %Y') if not df.empty else "N/A",
         "endDate": df['datetime'].max().strftime('%b %d, %Y') if not df.empty else "N/A"
@@ -446,6 +515,9 @@ def compute_chart_data(df):
         "heatmapData": heatmap_data,
         "messageTypeBreakdown": message_type_breakdown,
         "dateRange": date_range,
+        # Emoji stats
+        "topEmojisOverall": top_emojis_overall,
+        "topEmojisPerUser": top_emojis_per_user,
         # Legacy chart data (for backward compatibility)
         "dailyMessages": daily_messages,
         "hourlyData": hourly_data,
@@ -575,6 +647,10 @@ def analyze_zip():
                 "heatmapData": chart_data["heatmapData"],
                 "messageTypeBreakdown": chart_data["messageTypeBreakdown"],
                 "dateRange": chart_data["dateRange"],
+                
+                # ========== EMOJI STATS ==========
+                "topEmojisOverall": chart_data["topEmojisOverall"],
+                "topEmojisPerUser": chart_data["topEmojisPerUser"],
                 
                 # ========== LEGACY CHART DATA (backward compatibility) ==========
                 "dailyMessages": chart_data["dailyMessages"],
