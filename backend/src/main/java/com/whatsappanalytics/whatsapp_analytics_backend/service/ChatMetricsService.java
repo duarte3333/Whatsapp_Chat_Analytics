@@ -6,7 +6,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -128,6 +127,13 @@ public class ChatMetricsService {
             if (stats.get("topEmojisPerUser") != null) {
                 chatMetrics.setTopEmojisPerUserJson(objectMapper.writeValueAsString(stats.get("topEmojisPerUser")));
             }
+            // Streak stats
+            if (stats.get("longestStreak") != null) {
+                chatMetrics.setLongestStreakJson(objectMapper.writeValueAsString(stats.get("longestStreak")));
+            }
+            if (stats.get("longestStreakPerUser") != null) {
+                chatMetrics.setLongestStreakPerUserJson(objectMapper.writeValueAsString(stats.get("longestStreakPerUser")));
+            }
         } catch (JsonProcessingException e) {
             System.err.println("Error serializing chart data: " + e.getMessage());
         }
@@ -241,6 +247,19 @@ public class ChatMetricsService {
             if (metrics.getTopEmojisPerUserJson() != null) {
                 stats.put("topEmojisPerUser", objectMapper.readValue(
                     metrics.getTopEmojisPerUserJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            // Streak stats
+            if (metrics.getLongestStreakJson() != null) {
+                stats.put("longestStreak", objectMapper.readValue(
+                    metrics.getLongestStreakJson(), 
+                    new TypeReference<Map<String, Object>>() {}
+                ));
+            }
+            if (metrics.getLongestStreakPerUserJson() != null) {
+                stats.put("longestStreakPerUser", objectMapper.readValue(
+                    metrics.getLongestStreakPerUserJson(), 
                     new TypeReference<List<Map<String, Object>>>() {}
                 ));
             }

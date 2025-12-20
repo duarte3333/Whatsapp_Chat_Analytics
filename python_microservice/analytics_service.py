@@ -453,6 +453,71 @@ def compute_chart_data(df):
         "endDate": df['datetime'].max().strftime('%b %d, %Y') if not df.empty else "N/A"
     }
     
+    # ========== 7. LONGEST EMOJI STREAK (consecutive days with emoji usage) ==========
+    def calculate_longest_streak(dates):
+        """Calculate longest streak of consecutive days."""
+        if len(dates) == 0:
+            return {"days": 0, "startDate": None, "endDate": None}
+        
+        # Normalize to dates (remove time component)
+        unique_dates = sorted(set([pd.Timestamp(d).normalize() for d in dates]))
+        
+        if len(unique_dates) == 0:
+            return {"days": 0, "startDate": None, "endDate": None}
+        
+        longest_streak = 1
+        current_streak = 1
+        streak_start = unique_dates[0]
+        best_start = unique_dates[0]
+        best_end = unique_dates[0]
+        
+        for i in range(1, len(unique_dates)):
+            days_diff = (unique_dates[i] - unique_dates[i-1]).days
+            
+            if days_diff == 1:  # Consecutive day
+                current_streak += 1
+                if current_streak > longest_streak:
+                    longest_streak = current_streak
+                    best_start = streak_start
+                    best_end = unique_dates[i]
+            else:  # Gap in days
+                current_streak = 1
+                streak_start = unique_dates[i]
+        
+        return {
+            "days": longest_streak,
+            "startDate": best_start.strftime('%b %d, %Y') if longest_streak > 0 else None,
+            "endDate": best_end.strftime('%b %d, %Y') if longest_streak > 0 else None
+        }
+    
+    # Get dates where emojis were used (overall)
+    emoji_dates = []
+    for _, row in df.iterrows():
+        msg = row.get(message_col, '')
+        if not pd.isna(msg) and len(extract_emojis(msg)) > 0:
+            emoji_dates.append(row['datetime'])
+    
+    # Overall longest emoji streak
+    overall_streak = calculate_longest_streak(emoji_dates)
+    
+    # Longest emoji streak per user
+    longest_streak_per_user = []
+    for user in sender_counts.index:
+        user_df = df[df['sender'] == user]
+        user_emoji_dates = []
+        for _, row in user_df.iterrows():
+            msg = row.get(message_col, '')
+            if not pd.isna(msg) and len(extract_emojis(msg)) > 0:
+                user_emoji_dates.append(row['datetime'])
+        
+        user_streak = calculate_longest_streak(user_emoji_dates)
+        longest_streak_per_user.append({
+            "user": str(user),
+            "days": user_streak["days"],
+            "startDate": user_streak["startDate"],
+            "endDate": user_streak["endDate"]
+        })
+    
     # ========== LEGACY: Daily messages (by day of week) ==========
     day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     day_short = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -518,6 +583,9 @@ def compute_chart_data(df):
         # Emoji stats
         "topEmojisOverall": top_emojis_overall,
         "topEmojisPerUser": top_emojis_per_user,
+        # Streak stats
+        "longestStreak": overall_streak,
+        "longestStreakPerUser": longest_streak_per_user,
         # Legacy chart data (for backward compatibility)
         "dailyMessages": daily_messages,
         "hourlyData": hourly_data,
@@ -651,6 +719,10 @@ def analyze_zip():
                 # ========== EMOJI STATS ==========
                 "topEmojisOverall": chart_data["topEmojisOverall"],
                 "topEmojisPerUser": chart_data["topEmojisPerUser"],
+                
+                # ========== STREAK STATS ==========
+                "longestStreak": chart_data["longestStreak"],
+                "longestStreakPerUser": chart_data["longestStreakPerUser"],
                 
                 # ========== LEGACY CHART DATA (backward compatibility) ==========
                 "dailyMessages": chart_data["dailyMessages"],

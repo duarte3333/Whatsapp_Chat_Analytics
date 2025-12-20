@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -78,6 +79,41 @@ public class UserController {
 
         
         return ResponseEntity.ok(groups);
+    }
+
+    @PatchMapping("/groups/{groupId}")
+    public ResponseEntity<?> renameGroup(
+            @PathVariable Long groupId,
+            @RequestBody Map<String, String> body) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
+        
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
+        }
+        
+        String newName = body.get("name");
+        if (newName == null || newName.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Group name is required"));
+        }
+        
+        // Find the group
+        GroupChat group = groupChatRepository.findById(groupId).orElse(null);
+        
+        if (group == null) {
+            return ResponseEntity.notFound().build();
+        }
+        
+        // Check if user owns this group
+        if (!group.getUserId().equals(currentUser.getId())) {
+            return ResponseEntity.status(403).body(Map.of("error", "You don't own this group"));
+        }
+        
+        // Update the group name
+        group.setTitle(newName.trim());
+        groupChatRepository.save(group);
+        
+        return ResponseEntity.ok(Map.of("message", "Group renamed successfully", "name", newName.trim()));
     }
 
     @DeleteMapping("/groups/{groupId}")

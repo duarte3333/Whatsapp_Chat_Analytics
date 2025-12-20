@@ -89,6 +89,15 @@ public class ChatMetrics {
     @JdbcTypeCode(SqlTypes.JSON)
     private String topEmojisPerUserJson;
 
+    // Streak stats
+    @Column(name = "longest_streak", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String longestStreakJson;
+
+    @Column(name = "longest_streak_per_user", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String longestStreakPerUserJson;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
