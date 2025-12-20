@@ -80,6 +80,15 @@ public class ChatMetrics {
     @JdbcTypeCode(SqlTypes.JSON)
     private String dateRangeJson;
 
+    // Emoji stats
+    @Column(name = "top_emojis_overall", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String topEmojisOverallJson;
+
+    @Column(name = "top_emojis_per_user", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String topEmojisPerUserJson;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 

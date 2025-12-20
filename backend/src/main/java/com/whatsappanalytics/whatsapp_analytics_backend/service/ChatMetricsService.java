@@ -121,6 +121,13 @@ public class ChatMetricsService {
             if (stats.get("dateRange") != null) {
                 chatMetrics.setDateRangeJson(objectMapper.writeValueAsString(stats.get("dateRange")));
             }
+            // Emoji stats
+            if (stats.get("topEmojisOverall") != null) {
+                chatMetrics.setTopEmojisOverallJson(objectMapper.writeValueAsString(stats.get("topEmojisOverall")));
+            }
+            if (stats.get("topEmojisPerUser") != null) {
+                chatMetrics.setTopEmojisPerUserJson(objectMapper.writeValueAsString(stats.get("topEmojisPerUser")));
+            }
         } catch (JsonProcessingException e) {
             System.err.println("Error serializing chart data: " + e.getMessage());
         }
@@ -222,6 +229,19 @@ public class ChatMetricsService {
                 stats.put("dateRange", objectMapper.readValue(
                     metrics.getDateRangeJson(), 
                     new TypeReference<Map<String, Object>>() {}
+                ));
+            }
+            // Emoji stats
+            if (metrics.getTopEmojisOverallJson() != null) {
+                stats.put("topEmojisOverall", objectMapper.readValue(
+                    metrics.getTopEmojisOverallJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
+                ));
+            }
+            if (metrics.getTopEmojisPerUserJson() != null) {
+                stats.put("topEmojisPerUser", objectMapper.readValue(
+                    metrics.getTopEmojisPerUserJson(), 
+                    new TypeReference<List<Map<String, Object>>>() {}
                 ));
             }
         } catch (JsonProcessingException e) {
