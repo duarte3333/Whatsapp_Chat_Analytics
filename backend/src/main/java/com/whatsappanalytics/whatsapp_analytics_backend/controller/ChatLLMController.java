@@ -7,9 +7,11 @@ import org.springframework.web.bind.annotation.*;
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.ChatRequestDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.ChatLLMService;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 @RequestMapping("/chat-llm")
+@Slf4j
 public class ChatLLMController {
 
     private final ChatLLMService chatLLMService;
@@ -28,8 +30,16 @@ public class ChatLLMController {
             return ResponseEntity.status(401).body("User not authenticated");
         }
 
-        var response = chatLLMService.analyzeChat(chatId, currentUser.getId(), request.question);
-        return ResponseEntity.ok(response);
+        try {
+            var response = chatLLMService.analyzeChat(chatId, currentUser.getId(), request.question, currentUser);
+            return ResponseEntity.ok(response);
+        } catch (ChatLLMService.InsufficientCreditsException e) {
+            log.warn("User {} attempted to use chat without credits", currentUser.getId());
+            return ResponseEntity.status(402).body("Insufficient credits. Please purchase credits to continue.");
+        } catch (Exception e) {
+            log.error("Error analyzing chat", e);
+            return ResponseEntity.status(500).body("Error processing your request");
+        }
     }
 
 }

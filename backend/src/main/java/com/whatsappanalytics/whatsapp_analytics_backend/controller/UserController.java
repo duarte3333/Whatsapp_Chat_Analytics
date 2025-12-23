@@ -19,6 +19,7 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.ChatMetricsRepository;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.GroupChatRepository;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.UserRepository;
+import com.whatsappanalytics.whatsapp_analytics_backend.dto.CreditsResponseDto;
 
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -243,5 +244,18 @@ public class UserController {
             e.printStackTrace();
             return ResponseEntity.status(500).body("Failed to delete account: " + e.getMessage());
         }
+    }
+
+    @GetMapping("/credits")
+    public ResponseEntity<CreditsResponseDto> getCredits() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User currentUser = (User) authentication.getPrincipal();
+        
+        CreditsResponseDto response = new CreditsResponseDto(
+                currentUser.getRemainingCredits(),
+                currentUser.getHasLifetimeAccess()
+        );
+        
+        return ResponseEntity.ok(response);
     }
 }

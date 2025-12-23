@@ -46,6 +46,7 @@ dependencies {
     implementation 'org.hibernate.validator:hibernate-validator'
     testImplementation 'org.mockito:mockito-core'
     testImplementation 'org.mockito:mockito-junit-jupiter'
+    implementation 'com.stripe:stripe-java:25.7.0'
 }
 
 tasks.named('test') {

@@ -49,6 +49,12 @@ public class User implements UserDetails {
     @Column(name = "verification_expiration")
     private LocalDateTime verificationCodeExpiresAt;
 
+    @Column(name = "credits", nullable = false)
+    private Integer remainingCredits = 3;
+
+    @Column(name = "has_lifetime", nullable = false)
+    private Boolean hasLifetimeAccess = false;
+
 
 
 

@@ -10,9 +10,13 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
+
+import jakarta.servlet.http.HttpServletResponse;
+
 import org.springframework.http.HttpMethod;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
 @EnableWebSecurity
@@ -48,6 +52,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/oauth2/**",
                 "/login/**",
                 "/v3/api-docs/**",
+                "/api/payments/webhook",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
                 "/metrics/chat/upload-anonymous")
@@ -56,8 +61,14 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
         .oauth2Login(oauth2 -> oauth2
             .successHandler(oAuth2SuccessHandler)
             .failureHandler(oAuth2FailureHandler))
-        .formLogin(form -> form.disable())
+        .formLogin(form -> form.disable())  // Disable form login redirects
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .exceptionHandling(exception -> exception
+            .authenticationEntryPoint((request, response, authException) -> {
+                response.setContentType("application/json");
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.getWriter().write("{\"error\": \"Unauthorized\", \"message\": \"" + authException.getMessage() + "\"}");
+            }))
         .authenticationProvider(authenticationProvider)
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
