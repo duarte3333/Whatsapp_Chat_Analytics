@@ -21,3 +21,6 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+VISUAL_ARCHITECTURE.md
+ARCHITECTURE_DIAGRAM.md

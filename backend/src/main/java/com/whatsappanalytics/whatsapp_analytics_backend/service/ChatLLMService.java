@@ -20,27 +20,25 @@ public class ChatLLMService {
     private final UserRepository userRepository;
     private final String pythonUrl = "http://localhost:5050/llm/analyze";
 
-    public ChatLLMService(@Qualifier("pythonRestTemplate") RestTemplate restTemplate, UserRepository userRepository) {
+    //this is the constructor for the ChatLLMService class
+    public ChatLLMService(@Qualifier("pythonRestTemplate") RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
         this.userRepository = userRepository;
     }
 
-    public Map<String, Object> analyzeChat(Long chatId, Long userId, String question, User user) {
-        // Check if user has access (either credits or lifetime access)
-        if (!user.getHasLifetimeAccess() && user.getRemainingCredits() <= 0) {
-            log.warn("User {} has no credits and no lifetime access", userId);
-            throw new InsufficientCreditsException("No credits available");
-        }
-
+    //this is the method that will be used to analyze the chat
+    public Map<String, Object> analyzeChat(Long chatId, Long userId, String question) {
         var payload = Map.of(
                 "chat_id", chatId,
                 "user_id", userId,
                 "question", question
         );
 
+        //this is the request that will be sent to the python microservice
         var request = new HttpEntity<>(payload);
 
-        Map<String, Object> response = restTemplate.exchange(
+        //this is the response that will be returned from the python microservice
+        return restTemplate.exchange(
                 pythonUrl,
                 HttpMethod.POST,
                 request,
