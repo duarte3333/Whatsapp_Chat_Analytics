@@ -51,7 +51,8 @@ public class PaymentService {
                                 .build()
                 )
                 .putMetadata("type", request.getType())
-                .putMetadata("packageId", request.getPackageId());
+                .putMetadata("packageId", request.getPackageId())
+                .putMetadata("userEmail", user.getEmail());
 
         if ("credits".equals(request.getType()) && request.getCredits() != null) {
             paramsBuilder.putMetadata("credits", request.getCredits().toString());

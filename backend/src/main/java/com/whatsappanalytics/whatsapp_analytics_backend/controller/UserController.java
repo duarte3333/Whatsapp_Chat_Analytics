@@ -255,6 +255,8 @@ public class UserController {
                 currentUser.getRemainingCredits(),
                 currentUser.getHasLifetimeAccess()
         );
+
+        System.out.println("User " + currentUser.getId() + " has " + currentUser.getRemainingCredits() + " credits, lifetime access: " + currentUser.getHasLifetimeAccess());
         
         return ResponseEntity.ok(response);
     }
