@@ -17,8 +17,7 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.PaymentService;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.StripeWebhookService;
 import lombok.extern.slf4j.Slf4j;
-import java.util.Arrays;
-import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/payments")
@@ -103,47 +102,25 @@ public class PaymentController {
     }
 
     @PostMapping("/checkout")
-    public ResponseEntity<CheckoutSessionResponseDto> createCheckoutSession(@RequestBody PaymentRequestDto request) {
-        log.info("===== /API/PAYMENTS/CHECKOUT REQUEST RECEIVED =====");
-        log.info("Request body: {}", request);
-        
+    public ResponseEntity<?> createCheckoutSession(@RequestBody PaymentRequestDto request) {
         try {
             log.info("Step 1: Attempting to retrieve authentication context");
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-            log.info("Step 2: Authentication retrieved - Principal type: {}, IsAuthenticated: {}", 
-                authentication != null ? authentication.getPrincipal().getClass().getSimpleName() : "null",
-                authentication != null ? authentication.isAuthenticated() : false);
             
-            if (authentication == null) {
-                log.error("✗ No authentication context found");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            if (authentication == null || !authentication.isAuthenticated()) {
+                log.error("User not authenticated");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "User not authenticated"));
             }
             
-            Object principal = authentication.getPrincipal();
-            log.info("Step 3: Principal object: {}", principal);
+            User currentUser = (User) authentication.getPrincipal();
             
-            if (!(principal instanceof User)) {
-                log.error("✗ Principal is not a User instance, type: {}", principal.getClass().getName());
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            if (currentUser == null) {
+                log.error("Current user is null");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "User not found"));
             }
-            
-            User currentUser = (User) principal;
-            log.info("Step 4: Current user authenticated - Email: {}, ID: {}", currentUser.getEmail(), currentUser.getId());
-            
-            if (request == null) {
-                log.error("✗ PaymentRequestDto is null");
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-            }
-            
-            log.info("Step 5: PaymentRequestDto - Type: {}, PackageId: {}, Credits: {}", 
-                request.getType(), request.getPackageId(), request.getCredits());
-            
-            if (request.getType() == null || request.getPackageId() == null) {
-                log.error("✗ Missing required fields - Type: {}, PackageId: {}", request.getType(), request.getPackageId());
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-            }
-            
-            log.info("Step 6: Calling PaymentService.createCheckoutSession");
+
             CheckoutSessionResponseDto response = paymentService.createCheckoutSession(request, currentUser);
             
             log.info("Step 7: Checkout session created successfully - SessionId: {}", response.getSessionId());
@@ -152,17 +129,17 @@ public class PaymentController {
             
             return ResponseEntity.ok(response);
         } catch (StripeException e) {
-            log.error("✗ Stripe exception occurred - Error message: {}, Status code: {}", e.getMessage(), e.getStatusCode(), e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            log.error("Stripe exception occurred: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Payment processing failed", "message", e.getMessage()));
         } catch (IllegalArgumentException e) {
-            log.error("✗ Invalid package ID - Error message: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
-        } catch (ClassCastException e) {
-            log.error("✗ ClassCastException - Failed to cast principal to User: {}", e.getMessage(), e);
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            log.error("Invalid package ID: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(Map.of("error", "Invalid request", "message", e.getMessage()));
         } catch (Exception e) {
-            log.error("✗ Unexpected exception in checkout endpoint", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            log.error("Unexpected error in checkout: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "An unexpected error occurred", "message", e.getMessage()));
         }
     }
 

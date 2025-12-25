@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
@@ -153,12 +154,24 @@ public class ChatMetricsService {
 
     /**
      * Get stats for a group chat by ID
+     * @param groupId The group chat ID
+     * @param userId The user ID (null for public access, e.g., shared links)
      */
     public Map<String, Object> getStatsByGroupId(Long groupId, Long userId) {
-        // Verify group belongs to user
-        GroupChat group = groupChatRepository.findByIdAndUserId(groupId, userId);
-        if (group == null) {
-            return null;
+        // Verify group exists and belongs to user (if userId provided)
+        GroupChat group;
+        if (userId != null) {
+            // Authenticated access - verify ownership
+            group = groupChatRepository.findByIdAndUserId(groupId, userId);
+            if (group == null) {
+                return null;
+            }
+        } else {
+            // Public access - just verify group exists
+            group = groupChatRepository.findById(groupId).orElse(null);
+            if (group == null) {
+                return null;
+            }
         }
 
         ChatMetrics metrics = chatMetricsRepository.findByGroupChatId(groupId);

@@ -15,8 +15,6 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.http.HttpMethod;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Autowired;
-import jakarta.servlet.http.HttpServletResponse;
 
 @Configuration
 @EnableWebSecurity
@@ -55,7 +53,8 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/api/payments/webhook",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
-                "/metrics/chat/upload-anonymous")
+                "/metrics/chat/upload-anonymous",
+                "/shared/**")
             .permitAll()
             .anyRequest().authenticated())
         .oauth2Login(oauth2 -> oauth2

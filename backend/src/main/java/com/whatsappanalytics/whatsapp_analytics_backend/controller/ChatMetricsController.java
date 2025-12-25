@@ -37,6 +37,10 @@ public class ChatMetricsController {
         if (file.isEmpty() || !file.getOriginalFilename().endsWith(".zip")) {
             return ResponseEntity.badRequest().body(Map.of("error", "Invalid file"));
         }
+        //if filesize is greater than 1MB
+        if (file.getSize() > 1 * 1024 * 1024) {
+            return ResponseEntity.badRequest().body(Map.of("error", "File size is too large"));
+        }
 
         if (currentUser == null) {
             return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
