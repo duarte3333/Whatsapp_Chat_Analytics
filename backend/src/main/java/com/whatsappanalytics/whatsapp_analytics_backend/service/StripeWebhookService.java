@@ -34,79 +34,80 @@ public class StripeWebhookService {
         
         if ("checkout.session.completed".equals(event.getType())) {
             try {
-                // Extract values from raw payload JSON
-                String userEmail = extractJsonValue(payload, "customer_email");
-                String type = extractJsonValue(payload, "\"type\"");
-                String creditsStr = extractJsonValue(payload, "\"credits\"");
-                String packageId = extractJsonValue(payload, "\"packageId\"");
-                String userEmailFromMetadata = extractJsonValue(payload, "\"userEmail\"");
+                log.info("Processing checkout.session.completed webhook");
                 
-                if ((userEmail == null || userEmail.isEmpty()) && userEmailFromMetadata != null) {
-                    userEmail = userEmailFromMetadata;
-                }
+                // Simple regex-based extraction from metadata
+                String type = extractValueByKey(payload, "\"type\"");
+                String creditsStr = extractValueByKey(payload, "\"credits\"");
+                String userEmail = extractValueByKey(payload, "\"userEmail\"");
                 
-                log.info("Extracted - Email: {} | Type: {} | Credits: {} | Package: {}", 
-                    userEmail, type, creditsStr, packageId);
+                log.info("Extracted - Type: {}, Credits: {}, Email: {}", type, creditsStr, userEmail);
                 
-                if (userEmail != null && !userEmail.isEmpty()) {
+                if (userEmail != null && !userEmail.isEmpty() && type != null) {
                     User user = userRepository.findByEmail(userEmail).orElse(null);
                     
                     if (user != null) {
-                        log.info("✓ Found user: {}", userEmail);
+                        log.info("✓ Found user: {} (ID: {})", userEmail, user.getId());
                         
                         if ("credits".equals(type) && creditsStr != null) {
                             int credits = Integer.parseInt(creditsStr);
-                            user.setRemainingCredits((user.getRemainingCredits() != null ? user.getRemainingCredits() : 0) + credits);
-                            log.info("✓ Added {} credits to user {}", credits, userEmail);
+                            int oldCredits = user.getRemainingCredits() != null ? user.getRemainingCredits() : 0;
+                            int newCredits = oldCredits + credits;
+                            user.setRemainingCredits(newCredits);
+                            log.info("✓ Adding {} credits: {} + {} = {}", type, oldCredits, credits, newCredits);
                         } else if ("lifetime".equals(type)) {
                             user.setHasLifetimeAccess(true);
-                            log.info("✓ Granted lifetime access to user {}", userEmail);
+                            log.info("✓ Setting lifetime access for user {}", userEmail);
                         }
                         
-                        userRepository.save(user);
-                        log.info("✓✓ Successfully updated user {} in database", userEmail);
+                        User savedUser = userRepository.save(user);
+                        log.info("✓✓ SUCCESS - User {} updated. Credits: {}, Lifetime: {}", 
+                            userEmail, savedUser.getRemainingCredits(), savedUser.getHasLifetimeAccess());
                     } else {
-                        log.error("✗ User not found with email: {}", userEmail);
+                        log.error("✗ User not found: {}", userEmail);
                     }
                 } else {
-                    log.error("✗ No email found");
+                    log.error("✗ Missing required fields - Type: {}, Email: {}", type, userEmail);
                 }
             } catch (Exception e) {
-                log.error("✗ Error processing checkout session", e);
+                log.error("✗ Error processing webhook", e);
+                e.printStackTrace();
             }
         }
     }
     
-    private String extractJsonValue(String json, String key) {
+    private String extractValueByKey(String json, String key) {
         try {
-            String searchKey = key.contains("\"") ? key : "\"" + key + "\"";
-            int index = json.indexOf(searchKey);
-            if (index == -1) return null;
+            int keyIndex = json.indexOf(key);
+            if (keyIndex == -1) return null;
             
-            int colonIndex = json.indexOf(":", index);
+            int colonIndex = json.indexOf(":", keyIndex);
             if (colonIndex == -1) return null;
             
             int startIndex = colonIndex + 1;
-            while (startIndex < json.length() && (json.charAt(startIndex) == ' ' || json.charAt(startIndex) == ':')) {
+            while (startIndex < json.length() && json.charAt(startIndex) == ' ') {
                 startIndex++;
             }
             
             if (startIndex >= json.length()) return null;
             
+            // Handle quoted strings
             if (json.charAt(startIndex) == '"') {
                 int endIndex = json.indexOf('"', startIndex + 1);
                 if (endIndex == -1) return null;
                 return json.substring(startIndex + 1, endIndex);
-            } else {
-                int endIndex = startIndex;
-                while (endIndex < json.length() && json.charAt(endIndex) != ',' && json.charAt(endIndex) != '}' && json.charAt(endIndex) != ']') {
-                    endIndex++;
-                }
-                return json.substring(startIndex, endIndex).trim();
             }
+            
+            // Handle numbers or unquoted values
+            int endIndex = startIndex;
+            while (endIndex < json.length() && json.charAt(endIndex) != ',' && json.charAt(endIndex) != '}') {
+                endIndex++;
+            }
+            return json.substring(startIndex, endIndex).trim();
         } catch (Exception e) {
-            log.warn("Failed to extract JSON value for key: {}", key);
+            log.warn("Failed to extract value for key: {}", key);
             return null;
         }
     }
+    
 }

@@ -21,14 +21,14 @@ public class PaymentService {
     @Value("${app.frontend.url}")
     private String frontendUrl;
 
-    @Value("${stripe.price.credits-50}")
-    private String stripePriceCredits50;
+    @Value("${stripe.price.prompts-5}")
+    private String stripePricePrompts5;
 
-    @Value("${stripe.price.credits-150}")
-    private String stripePriceCredits150;
+    @Value("${stripe.price.prompts-10}")
+    private String stripePricePrompts10;
 
-    @Value("${stripe.price.credits-500}")
-    private String stripePriceCredits500;
+    @Value("${stripe.price.prompts-20}")
+    private String stripePricePrompts20;
 
     @Value("${stripe.price.lifetime}")
     private String stripePriceLifetime;
@@ -69,9 +69,9 @@ public class PaymentService {
         // Map package IDs to Stripe price IDs
         // These should be configured in your Stripe dashboard
         return switch (packageId) {
-            case "credits-50" -> stripePriceCredits50;
-            case "credits-150" -> stripePriceCredits150;
-            case "credits-500" -> stripePriceCredits500;
+            case "prompts-5" -> stripePricePrompts5;
+            case "prompts-10" -> stripePricePrompts10;
+            case "prompts-20" -> stripePricePrompts20;
             case "lifetime" -> stripePriceLifetime;
             default -> throw new IllegalArgumentException("Unknown package: " + packageId);
         };
