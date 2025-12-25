@@ -345,12 +345,129 @@ def compute_chart_data(df):
     df['hour'] = df['datetime'].dt.hour
     df['week_start'] = df['datetime'].dt.to_period('W-MON').dt.start_time
     
+    # Helper function to detect media messages across multiple languages
+    def is_media_message(text):
+        if pd.isna(text):
+            return False
+        text = str(text).lower()
+        
+        # Comprehensive list of media message patterns across multiple languages
+        # WhatsApp uses different patterns for media messages in different languages
+        media_patterns = [
+            # English
+            '<media omitted>', 'media omitted', 'image omitted', 'video omitted',
+            'audio omitted', 'sticker omitted', 'gif omitted', 'document omitted',
+            'voice message omitted', 'location omitted', 'contact omitted',
+            
+            # Portuguese (WhatsApp uses "não revelada/não revelado")
+            'imagem não revelada', 'vídeo não revelado', 'áudio não revelado',
+            'ficheiro de áudio não revelado', 'documento não revelado',
+            'contacto não revelado', 'localização não revelada',
+            'figurinha não revelada', 'gif não revelado', 'mídia não revelada',
+            # Also include older/alternative patterns
+            '<mídia omitida>', 'mídia omitida', 'imagem omitida', 'vídeo omitido',
+            'áudio omitido', 'figurinha omitida', 'gif omitido', 'documento omitido',
+            'mensagem de voz omitida', 'localização omitida', 'contato omitido',
+            
+            # Spanish
+            '<multimedia omitida>', 'multimedia omitida', 'imagen omitida', 'vídeo omitido',
+            'audio omitido', 'pegatina omitida', 'gif omitido', 'documento omitido',
+            'mensaje de voz omitido', 'ubicación omitida', 'contacto omitido',
+            
+            # French
+            '<média omis>', 'média omis', 'image omise', 'vidéo omise',
+            'audio omis', 'autocollant omis', 'gif omis', 'document omis',
+            'message vocal omis', 'localisation omise', 'contact omis',
+            
+            # German
+            '<medien ausgelassen>', 'medien ausgelassen', 'bild ausgelassen',
+            'video ausgelassen', 'audio ausgelassen', 'sticker ausgelassen',
+            'gif ausgelassen', 'dokument ausgelassen', 'sprachnachricht ausgelassen',
+            'standort ausgelassen', 'kontakt ausgelassen',
+            
+            # Italian
+            '<media omesso>', 'media omesso', 'immagine omessa', 'video omesso',
+            'audio omesso', 'adesivo omesso', 'gif omesso', 'documento omesso',
+            'messaggio vocale omesso', 'posizione omessa', 'contatto omesso',
+            
+            # Dutch
+            '<media weggelaten>', 'media weggelaten', 'afbeelding weggelaten',
+            'video weggelaten', 'audio weggelaten', 'sticker weggelaten',
+            'gif weggelaten', 'document weggelaten', 'spraakbericht weggelaten',
+            'locatie weggelaten', 'contact weggelaten',
+            
+            # Russian (Cyrillic)
+            'медиафайл не включён', 'изображение не включено', 'видео не включено',
+            'аудио не включено', 'стикер не включён', 'gif не включён',
+            'документ не включён', 'голосовое сообщение не включено',
+            
+            # Arabic
+            'تم حذف الوسائط', 'تم حذف الصورة', 'تم حذف الفيديو',
+            'تم حذف الصوت', 'تم حذف الملصق', 'تم حذف الملف',
+            
+            # Hindi (Devanagari)
+            'मीडिया हटाया गया', 'छवि हटाई गई', 'वीडियो हटाया गया',
+            'ऑडियो हटाया गया', 'स्टिकर हटाया गया', 'दस्तावेज़ हटाया गया',
+            
+            # Chinese (Simplified) - more specific patterns
+            '媒体文件已省略', '图片已省略', '视频已省略', '音频已省略',
+            '贴纸已省略', '文件已省略', '媒体未包含',
+            
+            # Japanese - specific omission patterns
+            'メディアが省略されました', '画像が省略されました', '動画が省略されました',
+            '音声が省略されました', 'ステッカーが省略されました', 'ファイルが省略されました',
+            
+            # Turkish
+            'medya atlandı', 'görsel atlandı', 'video atlandı',
+            'ses atlandı', 'çıkartma atlandı', 'dosya atlandı',
+            
+            # Polish
+            'pominięto multimedia', 'pominięto obraz', 'pominięto wideo',
+            'pominięto audio', 'pominięto naklejkę', 'pominięto plik',
+            
+            # Additional common patterns (keeping specific to avoid false positives)
+            'file omitted', 'document omitted', 'attachment omitted'
+        ]
+        
+        return any(pattern in text for pattern in media_patterns)
+    
+    message_col = 'message' if 'message' in df.columns else 'content'
+    
     # ========== 1. MESSAGES PER USER (for bar chart & pie chart) ==========
     sender_counts = df['sender'].value_counts()
-    messages_per_user = [
-        {"user": str(name), "count": int(count)}
-        for name, count in sender_counts.items()
-    ]
+    messages_per_user = []
+    
+    for name, total_count in sender_counts.items():
+        user_df = df[df['sender'] == name]
+        user_messages = user_df[message_col] if message_col in user_df.columns else pd.Series([])
+        
+        # Calculate text and media counts
+        media_count = sum(1 for msg in user_messages if is_media_message(msg))
+        text_count = int(total_count) - media_count
+        
+        # Calculate time-of-day counts
+        # Morning: 6:00 - 11:59
+        morning_count = len(user_df[(user_df['hour'] >= 6) & (user_df['hour'] < 12)])
+        
+        # Afternoon: 12:00 - 17:59
+        afternoon_count = len(user_df[(user_df['hour'] >= 12) & (user_df['hour'] < 18)])
+        
+        # Night: 18:00 - 5:59 (evening + late night)
+        night_count = len(user_df[(user_df['hour'] >= 18) | (user_df['hour'] < 6)])
+        
+        # Weekend count: Saturday (5) and Sunday (6)
+        weekend_count = len(user_df[user_df['day_of_week'] >= 5])
+        
+        messages_per_user.append({
+            "user": str(name),
+            "count": int(total_count),
+            "textCount": text_count,
+            "mediaCount": media_count,
+            "morningCount": morning_count,
+            "afternoonCount": afternoon_count,
+            "nightCount": night_count,
+            "weekendCount": weekend_count
+        })
     
     # ========== 2. WEEKLY VOLUME (for line chart) ==========
     weekly = df.groupby('week_start').size().reset_index(name='count')
@@ -379,16 +496,6 @@ def compute_chart_data(df):
             return 0
         return len([c for c in str(text) if c in emoji_lib.EMOJI_DATA])
     
-    def is_media_message(text):
-        if pd.isna(text):
-            return False
-        text = str(text).lower()
-        media_patterns = ['<media omitted>', 'image omitted', 'video omitted', 
-                         'audio omitted', 'sticker omitted', 'gif omitted',
-                         '<mídia omitida>', '<media omesso>']
-        return any(pattern in text for pattern in media_patterns)
-    
-    message_col = 'message' if 'message' in df.columns else 'content'
     message_type_breakdown = []
     
     for user in sender_counts.head(10).index:  # Top 10 users
