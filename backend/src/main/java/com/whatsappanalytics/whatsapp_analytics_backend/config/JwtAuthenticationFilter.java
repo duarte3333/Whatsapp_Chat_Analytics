@@ -44,9 +44,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 
         final String authHeader = request.getHeader("Authorization");
+        final String requestPath = request.getRequestURI();
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            System.out.println("No Bearer token found, passing through without auth");
+            // Only log for non-OPTIONS requests to reduce noise
+            if (!"OPTIONS".equals(request.getMethod())) {
+                System.out.println("No Bearer token found for " + request.getMethod() + " " + requestPath + ", passing through without auth");
+            }
             filterChain.doFilter(request, response);
             return;
         }
@@ -86,6 +90,5 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "JWT authentication failed");
         }
     }
-
-        }
+}
     

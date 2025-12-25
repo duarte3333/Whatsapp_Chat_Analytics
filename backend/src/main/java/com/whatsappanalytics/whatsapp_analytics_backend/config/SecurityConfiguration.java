@@ -45,6 +45,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
         .cors(cors -> cors.configurationSource(corsSource))
         .authorizeHttpRequests(authorize -> authorize
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+            .requestMatchers(HttpMethod.POST, "/shared/guest").permitAll()
             .requestMatchers(
                 "/auth/**",
                 "/oauth2/**",
@@ -54,7 +55,8 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/swagger-ui/**",
                 "/swagger-ui.html",
                 "/metrics/chat/upload-anonymous",
-                "/shared/**")
+                "/shared/**",
+                "/api/shared/**")
             .permitAll()
             .anyRequest().authenticated())
         .oauth2Login(oauth2 -> oauth2

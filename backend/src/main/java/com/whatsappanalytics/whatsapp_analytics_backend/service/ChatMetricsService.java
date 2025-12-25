@@ -20,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,6 +31,7 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.GroupChat;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.ChatMetricsRepository;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.GroupChatRepository;
+import com.whatsappanalytics.whatsapp_analytics_backend.repository.UserRepository;
 
 @Service
 public class ChatMetricsService {
@@ -38,19 +40,48 @@ public class ChatMetricsService {
     private final String pythonServiceUrl = "http://localhost:5050/analyze";
     private final ChatMetricsRepository chatMetricsRepository;
     private final GroupChatRepository groupChatRepository;
+    private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     
+    // Guest user email - used to identify the guest user
+    private static final String GUEST_USER_EMAIL = "guest@whatsappanalytics.internal";
+    private static final String GUEST_USER_USERNAME = "guest_user";
 
     public ChatMetricsService(
         ChatMetricsRepository chatMetricsRepository,
         GroupChatRepository groupChatRepository,
+        UserRepository userRepository,
         @Qualifier("pythonRestTemplate") RestTemplate restTemplate,
         ObjectMapper objectMapper
     ) {
     this.chatMetricsRepository = chatMetricsRepository;
     this.groupChatRepository = groupChatRepository;
+    this.userRepository = userRepository;
     this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Get or create a guest user for anonymous uploads
+     * @return The guest user ID
+     */
+    private Long getOrCreateGuestUser() {
+        return userRepository.findByEmail(GUEST_USER_EMAIL)
+            .map(User::getId)
+            .orElseGet(() -> {
+                // Create guest user if it doesn't exist
+                User guestUser = new User();
+                guestUser.setEmail(GUEST_USER_EMAIL);
+                guestUser.setUsername(GUEST_USER_USERNAME);
+                guestUser.setPassword(""); // No password for guest user
+                guestUser.setEnabled(true);
+                guestUser.setGroupIds(List.of());
+                guestUser.setRemainingCredits(0);
+                guestUser.setHasLifetimeAccess(false);
+                User saved = userRepository.save(guestUser);
+                System.out.println("Created guest user with ID: " + saved.getId());
+                return saved.getId();
+            });
     }
 
     public Map<String, Object> processAnonymousFile(MultipartFile file) {
@@ -62,6 +93,131 @@ public class ChatMetricsService {
         System.out.println("Received stats from Python service: " + stats);
         System.out.println("Stats keys: " + (stats != null ? stats.keySet() : "null"));
         return stats != null ? stats : Collections.emptyMap();
+    }
+
+    /**
+     * Save anonymous stats to database for sharing
+     * @param stats The stats data from anonymous upload
+     * @return The groupId of the saved group
+     */
+    @Transactional
+    public Long saveAnonymousStats(Map<String, Object> stats) {
+        if (stats == null || stats.isEmpty()) {
+            throw new IllegalArgumentException("Stats data is required");
+        }
+
+        try {
+            System.out.println("=== saveAnonymousStats called ===");
+            System.out.println("Stats keys: " + stats.keySet());
+            
+            // Remove temporary frontend fields that shouldn't be saved
+            Map<String, Object> cleanedStats = new HashMap<>(stats);
+            cleanedStats.remove("id"); // Remove guest-* ID from frontend
+            cleanedStats.remove("expires_in_seconds"); // Remove temporary field
+            cleanedStats.remove("session_id"); // Remove session ID if present
+            
+            // 1. Create GroupChat with guest user ID
+            Long guestUserId = getOrCreateGuestUser();
+            GroupChat newChat = new GroupChat();
+            String title = (String) cleanedStats.getOrDefault("title", "Chat " + System.currentTimeMillis());
+            newChat.setTitle(title);
+            newChat.setUserId(guestUserId);
+
+            int participantsCount = extractInt(cleanedStats.get("participants_count"));
+            System.out.println("Participants count: " + participantsCount);
+            newChat.setParticipantsCount(participantsCount);
+            newChat.setCreatedAt(LocalDateTime.now());
+            
+            System.out.println("Saving GroupChat with title: " + title + ", userId: " + guestUserId);
+            try {
+                groupChatRepository.save(newChat);
+                System.out.println("GroupChat saved with ID: " + newChat.getId());
+            } catch (Exception e) {
+                System.err.println("Error saving GroupChat: " + e.getClass().getName() + " - " + e.getMessage());
+                e.printStackTrace();
+                throw new RuntimeException("Failed to save group chat. Database constraint error: " + e.getMessage(), e);
+            }
+
+            // 2. Create ChatMetrics with all data including chart data
+            ChatMetrics chatMetrics = new ChatMetrics();
+            chatMetrics.setGroupChatId(newChat.getId());
+            chatMetrics.setTotalMessages(extractInt(cleanedStats.get("total_messages")));
+            chatMetrics.setTopUser((String) cleanedStats.getOrDefault("top_user", "Unknown"));
+            chatMetrics.setParticipantsCount(participantsCount);
+            
+            // Handle nullable fields
+            Object mostActiveDay = cleanedStats.get("mostActiveDay");
+            if (mostActiveDay != null) {
+                chatMetrics.setMostActiveDay(mostActiveDay.toString());
+            }
+            Object peakHour = cleanedStats.get("peakHour");
+            if (peakHour != null) {
+                chatMetrics.setPeakHour(peakHour.toString());
+            }
+
+            // Save chart data as JSON (same as processAndSaveMetrics)
+            try {
+                // Legacy chart data
+                if (cleanedStats.get("dailyMessages") != null) {
+                    chatMetrics.setDailyMessagesJson(objectMapper.writeValueAsString(cleanedStats.get("dailyMessages")));
+                }
+                if (cleanedStats.get("hourlyData") != null) {
+                    chatMetrics.setHourlyDataJson(objectMapper.writeValueAsString(cleanedStats.get("hourlyData")));
+                }
+                if (cleanedStats.get("participantData") != null) {
+                    chatMetrics.setParticipantDataJson(objectMapper.writeValueAsString(cleanedStats.get("participantData")));
+                }
+                if (cleanedStats.get("emojiUsage") != null) {
+                    chatMetrics.setEmojiUsageJson(objectMapper.writeValueAsString(cleanedStats.get("emojiUsage")));
+                }
+                // New chart data
+                if (cleanedStats.get("messagesPerUser") != null) {
+                    chatMetrics.setMessagesPerUserJson(objectMapper.writeValueAsString(cleanedStats.get("messagesPerUser")));
+                }
+                if (cleanedStats.get("weeklyVolume") != null) {
+                    chatMetrics.setWeeklyVolumeJson(objectMapper.writeValueAsString(cleanedStats.get("weeklyVolume")));
+                }
+                if (cleanedStats.get("heatmapData") != null) {
+                    chatMetrics.setHeatmapDataJson(objectMapper.writeValueAsString(cleanedStats.get("heatmapData")));
+                }
+                if (cleanedStats.get("messageTypeBreakdown") != null) {
+                    chatMetrics.setMessageTypeBreakdownJson(objectMapper.writeValueAsString(cleanedStats.get("messageTypeBreakdown")));
+                }
+                if (cleanedStats.get("dateRange") != null) {
+                    chatMetrics.setDateRangeJson(objectMapper.writeValueAsString(cleanedStats.get("dateRange")));
+                }
+                // Emoji stats
+                if (cleanedStats.get("topEmojisOverall") != null) {
+                    chatMetrics.setTopEmojisOverallJson(objectMapper.writeValueAsString(cleanedStats.get("topEmojisOverall")));
+                }
+                if (cleanedStats.get("topEmojisPerUser") != null) {
+                    chatMetrics.setTopEmojisPerUserJson(objectMapper.writeValueAsString(cleanedStats.get("topEmojisPerUser")));
+                }
+                // Streak stats
+                if (cleanedStats.get("longestStreak") != null) {
+                    chatMetrics.setLongestStreakJson(objectMapper.writeValueAsString(cleanedStats.get("longestStreak")));
+                }
+                if (cleanedStats.get("longestStreakPerUser") != null) {
+                    chatMetrics.setLongestStreakPerUserJson(objectMapper.writeValueAsString(cleanedStats.get("longestStreakPerUser")));
+                }
+            } catch (JsonProcessingException e) {
+                System.err.println("Error serializing chart data: " + e.getMessage());
+            }
+
+        chatMetrics.setCreatedAt(LocalDateTime.now());
+        chatMetrics.setLastUpdated(LocalDateTime.now());
+
+            // 3. Persist ChatMetrics
+            System.out.println("Saving ChatMetrics for groupId: " + newChat.getId());
+            chatMetricsRepository.save(chatMetrics);
+            System.out.println("ChatMetrics saved successfully");
+
+            return newChat.getId();
+        } catch (Exception e) {
+            System.err.println("Error in saveAnonymousStats: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to save anonymous stats: " + e.getMessage(), e);
+        }
     }
 
     public Map<String, Object> processAndSaveMetrics(MultipartFile file, User currentUser) {

@@ -17,6 +17,8 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.PaymentService;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.StripeWebhookService;
 import lombok.extern.slf4j.Slf4j;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -129,15 +131,19 @@ public class PaymentController {
             
             return ResponseEntity.ok(response);
         } catch (StripeException e) {
-            log.error("Stripe exception occurred: {}", e.getMessage(), e);
+            log.error("✗ Stripe exception occurred - Error message: {}, Status code: {}", e.getMessage(), e.getStatusCode(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Payment processing failed", "message", e.getMessage()));
         } catch (IllegalArgumentException e) {
-            log.error("Invalid package ID: {}", e.getMessage(), e);
+            log.error("✗ Invalid package ID - Error message: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(Map.of("error", "Invalid request", "message", e.getMessage()));
+        } catch (ClassCastException e) {
+            log.error("✗ ClassCastException - Failed to cast principal to User: {}", e.getMessage(), e);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(Map.of("error", "Authentication error", "message", e.getMessage()));
         } catch (Exception e) {
-            log.error("Unexpected error in checkout: {}", e.getMessage(), e);
+            log.error("✗ Unexpected exception in checkout endpoint", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "An unexpected error occurred", "message", e.getMessage()));
         }

@@ -33,7 +33,13 @@ public class ShareController {
             @RequestBody(required = false) Map<String, Integer> request,
             @AuthenticationPrincipal User currentUser) {
         
+        log.info("===== CREATE SHARE LINK REQUEST =====");
+        log.info("Group ID: {}", groupId);
+        log.info("Current user: {}", currentUser != null ? currentUser.getEmail() : "null");
+        log.info("Request body: {}", request);
+        
         if (currentUser == null) {
+            log.error("User not authenticated for share link creation");
             return ResponseEntity.status(401).body(Map.of("error", "User not authenticated"));
         }
 
@@ -52,6 +58,59 @@ public class ShareController {
         } catch (Exception e) {
             log.error("Unexpected error creating share link: {}", e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to create share link"));
+        }
+    }
+
+    /**
+     * Create a share link for anonymous/guest stats
+     * POST /shared/guest
+     * Auth: None (public)
+     */
+    @PostMapping("/shared/guest")
+    public ResponseEntity<?> createGuestShareLink(@RequestBody Map<String, Object> request) {
+        try {
+            log.info("Received guest share link request with keys: {}", request.keySet());
+            
+            // Extract stats data - check if wrapped in "stats" key or sent directly
+            @SuppressWarnings("unchecked")
+            Map<String, Object> stats = (Map<String, Object>) request.get("stats");
+            
+            // If stats is not found in "stats" key, assume the entire request is the stats
+            if (stats == null || stats.isEmpty()) {
+                // Check if request contains stats-like keys (e.g., "title", "total_messages", etc.)
+                if (request.containsKey("title") || request.containsKey("total_messages") || request.containsKey("dailyMessages")) {
+                    stats = request; // Use the entire request as stats
+                } else {
+                    log.error("No stats data found in request. Request keys: {}", request.keySet());
+                    return ResponseEntity.badRequest().body(Map.of("error", "Stats data is required"));
+                }
+            }
+            
+            // Extract expiration days from request (optional)
+            Integer expiresInDays = null;
+            if (request.containsKey("expiresInDays")) {
+                Object expDays = request.get("expiresInDays");
+                if (expDays instanceof Integer) {
+                    expiresInDays = (Integer) expDays;
+                } else if (expDays instanceof Number) {
+                    expiresInDays = ((Number) expDays).intValue();
+                }
+            }
+
+            if (stats == null || stats.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Stats data is required"));
+            }
+
+            log.info("Creating guest share link with stats containing {} keys", stats.size());
+            ShareLinkResponseDto response = shareLinkService.createGuestShareLink(stats, expiresInDays);
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            log.error("Error creating guest share link: {}", e.getMessage(), e);
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            log.error("Unexpected error creating guest share link: {}", e.getMessage(), e);
+            e.printStackTrace();
+            return ResponseEntity.internalServerError().body(Map.of("error", "Failed to create share link: " + e.getMessage()));
         }
     }
 

@@ -78,6 +78,57 @@ public class ShareLinkService {
     }
 
     /**
+     * Create a share link for anonymous/guest stats
+     * @param stats The stats data from anonymous upload
+     * @param expiresInDays Optional expiration in days (null for no expiration, default 7)
+     * @return ShareLinkResponseDto with token and expiration
+     */
+    @Transactional
+    public ShareLinkResponseDto createGuestShareLink(Map<String, Object> stats, Integer expiresInDays) {
+        if (stats == null || stats.isEmpty()) {
+            throw new IllegalArgumentException("Stats data is required");
+        }
+
+        // Save the stats to database (creates temporary GroupChat with userId = -1)
+        Long groupId = chatMetricsService.saveAnonymousStats(stats);
+
+        // Generate unique token
+        String token = generateUniqueToken();
+
+        // Calculate expiration (default to 7 days if not provided)
+        LocalDateTime expiresAt = null;
+        int expirationDays = (expiresInDays != null && expiresInDays > 0) ? expiresInDays : 7;
+        expiresAt = LocalDateTime.now().plusDays(expirationDays);
+
+        // Create share link
+        ShareLink shareLink = new ShareLink();
+        shareLink.setToken(token);
+        shareLink.setGroupId(groupId);
+        // Use the same userId as the group (which should be the guest user ID)
+        // Get the userId from the group to ensure consistency
+        GroupChat group = groupChatRepository.findById(groupId).orElse(null);
+        Long guestUserId = (group != null) ? group.getUserId() : null;
+        if (guestUserId == null) {
+            throw new IllegalArgumentException("Group not found for share link creation");
+        }
+        shareLink.setUserId(guestUserId);
+        shareLink.setCreatedAt(LocalDateTime.now());
+        shareLink.setExpiresAt(expiresAt);
+        shareLink.setViewCount(0);
+
+        try {
+            shareLinkRepository.save(shareLink);
+        } catch (Exception e) {
+            log.error("Error saving share link: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to save share link: " + e.getMessage(), e);
+        }
+
+        log.info("Created guest share link for group {} (anonymous user)", groupId);
+
+        return new ShareLinkResponseDto(token, expiresAt);
+    }
+
+    /**
      * Get stats for a shared link (public access)
      * @param token The share token
      * @return Map with all stats data (same format as /metrics/chat/{id})
