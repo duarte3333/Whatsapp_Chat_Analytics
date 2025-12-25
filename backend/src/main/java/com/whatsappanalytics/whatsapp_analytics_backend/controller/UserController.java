@@ -25,6 +25,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.transaction.annotation.Transactional;
 
 @RequestMapping("/users")
@@ -259,5 +261,69 @@ public class UserController {
         System.out.println("User " + currentUser.getId() + " has " + currentUser.getRemainingCredits() + " credits, lifetime access: " + currentUser.getHasLifetimeAccess());
         
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/credits/deduct")
+    public ResponseEntity<?> deductCredits(
+            @RequestBody Map<String, Integer> request,
+            @AuthenticationPrincipal User currentUser
+    ) {
+        if (currentUser == null) {
+            return ResponseEntity.status(401).body("User not authenticated");
+        }
+
+        try {
+            Integer amount = request.get("amount");
+            if (amount == null || amount <= 0) {
+                return ResponseEntity.status(400).body("Invalid amount. Must be greater than 0.");
+            }
+
+            User user = userRepository.findById(currentUser.getId()).orElse(null);
+            if (user == null) {
+                return ResponseEntity.status(404).body("User not found");
+            }
+
+            // Check if user has lifetime access - if yes, don't deduct
+            if (user.getHasLifetimeAccess() != null && user.getHasLifetimeAccess()) {
+                System.out.println("User " + currentUser.getId() + " has lifetime access, no credit deduction needed");
+                return ResponseEntity.ok(Map.of(
+                    "remainingCredits", user.getRemainingCredits() != null ? user.getRemainingCredits() : 0,
+                    "hasLifetimeAccess", true,
+                    "message", "Lifetime access active - no credits deducted"
+                ));
+            }
+
+            // Check if user has enough credits
+            int currentCredits = user.getRemainingCredits() != null ? user.getRemainingCredits() : 0;
+            if (currentCredits < amount) {
+                System.out.println("User " + currentUser.getId() + " attempted to deduct " + amount + " credits but only has " + currentCredits);
+                return ResponseEntity.status(402).body(Map.of(
+                    "error", "Insufficient credits",
+                    "remainingCredits", currentCredits,
+                    "requestedAmount", amount
+                ));
+            }
+
+            // Deduct credits and save
+            int newCredits = currentCredits - amount;
+            user.setRemainingCredits(newCredits);
+            User savedUser = userRepository.save(user);
+
+            System.out.println("Deducted " + amount + " credits from user " + currentUser.getId() + ". New balance: " + newCredits);
+
+            return ResponseEntity.ok(Map.of(
+                "remainingCredits", newCredits,
+                "hasLifetimeAccess", user.getHasLifetimeAccess() != null && user.getHasLifetimeAccess(),
+                "deductedAmount", amount,
+                "message", "Credits deducted successfully"
+            ));
+        } catch (Exception e) {
+            System.err.println("Error deducting credits for user " + currentUser.getId() + ": " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of(
+                "error", "Error deducting credits",
+                "details", e.getMessage()
+            ));
+        }
     }
 }
