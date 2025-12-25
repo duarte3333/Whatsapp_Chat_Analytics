@@ -66,14 +66,43 @@ public class PaymentService {
     }
 
     private String getPriceId(String packageId) {
+        log.info("Getting Stripe Price ID for package: {}", packageId);
+        
         // Map package IDs to Stripe price IDs
         // These should be configured in your Stripe dashboard
-        return switch (packageId) {
-            case "prompts-5" -> stripePricePrompts5;
-            case "prompts-10" -> stripePricePrompts10;
-            case "prompts-20" -> stripePricePrompts20;
+        // Support both "prompts-X" and "credits-X" naming conventions
+        String priceId = switch (packageId) {
+            case "prompts-5", "credits-5" -> stripePricePrompts5;
+            case "prompts-10", "credits-10" -> stripePricePrompts10;
+            case "prompts-20", "credits-20" -> stripePricePrompts20;
             case "lifetime" -> stripePriceLifetime;
             default -> throw new IllegalArgumentException("Unknown package: " + packageId);
         };
+        
+        log.info("Resolved Price ID for package '{}': {}", packageId, priceId);
+        
+        // Validate that a real Stripe price ID is configured (not a placeholder)
+        if (priceId == null || priceId.contains("placeholder") || !priceId.startsWith("price_")) {
+            String envVarName;
+            if (packageId.equals("lifetime")) {
+                envVarName = "STRIPE_PRICE_LIFETIME";
+            } else {
+                String number = packageId.replace("credits-", "").replace("prompts-", "");
+                envVarName = "STRIPE_PRICE_PROMPTS_" + number;
+            }
+            
+            String errorMessage = String.format(
+                "Stripe Price ID not configured for package '%s'. " +
+                "Current value: '%s'. " +
+                "Please set the %s environment variable with a valid Stripe Price ID (starts with 'price_'). " +
+                "Get Price IDs from: Stripe Dashboard → Products → Select product → Copy Price ID",
+                packageId, priceId, envVarName
+            );
+            
+            log.error(errorMessage);
+            throw new IllegalArgumentException(errorMessage);
+        }
+        
+        return priceId;
     }
 }
