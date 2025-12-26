@@ -26,10 +26,9 @@ if stats_computation_path not in sys.path:
 # Now import the parser and its dependencies
 try:
     from parser import WhatsAppChatParser
-    print("✓ Successfully imported WhatsAppChatParser")
 except ImportError as e:
-    print(f"✗ Failed to import parser: {e}")
     traceback.print_exc()
+    raise
 
 load_dotenv()
 
@@ -110,7 +109,6 @@ def create_rag_session(df, session_id=None):
             "participants": list(df['sender'].unique()),
         }
     
-    app.logger.info(f"Created RAG session {session_id} with {len(selected_messages)}/{len(df)} messages ({total_tokens} tokens, expires in {RAG_CACHE_TTL}s)")
     return session_id
 
 
@@ -195,8 +193,6 @@ def rag_ask():
         context = session["context"]
         included_messages = session["included_messages"]
         total_messages = session["total_messages"]
-        
-        app.logger.info(f"RAG query: using {included_messages}/{total_messages} most recent messages ({session['context_tokens']} tokens)")
         
         prompt = f"""
         You are an expert conversation analyst analyzing a WhatsApp chat.
@@ -323,7 +319,6 @@ def compute_chart_data(df):
         
         # Check if there are messages within 3 months of the first message
         messages_within_3_months = df[df['datetime'] <= three_months_later]
-        print(f"Messages within 3 months: {len(messages_within_3_months)}")
         
         if len(messages_within_3_months) == 1:
             # Only the first message exists within 3 months, find where activity resumes
@@ -336,7 +331,6 @@ def compute_chart_data(df):
                 if len(messages_after) > 0:
                     # Found a message with activity within 3 months, keep from here
                     df = df.iloc[i:].reset_index(drop=True)
-                    app.logger.info(f"Filtered out {i} isolated early message(s) due to 3+ month gap")
                     break
     
     # Add helper columns
@@ -431,6 +425,119 @@ def compute_chart_data(df):
         
         return any(pattern in text for pattern in media_patterns)
     
+    # Helper function to detect if a message contains at least one emoji
+    def has_emoji(text):
+        if pd.isna(text):
+            return False
+        text_str = str(text)
+        # Check if any character in the text is an emoji
+        return any(c in emoji_lib.EMOJI_DATA for c in text_str)
+    
+    # Helper function to detect audio/voice messages specifically
+    def is_audio_message(text):
+        if pd.isna(text):
+            return False
+        text = str(text).lower()
+        audio_patterns = [
+            # English
+            'audio omitted', '<audio omitted>', 'voice omitted', 'voice message omitted',
+            'ptt omitted',  # WhatsApp internal for voice notes (Push To Talk)
+            
+            # Portuguese
+            'áudio omitido', 'áudio não revelado', 'audio não revelado',
+            'ficheiro de áudio não revelado', 'mensagem de voz omitida',
+            'mensagem de voz não revelada',
+            
+            # Spanish
+            'audio omitido', 'audio no revelado', 'mensaje de voz omitido',
+            'mensaje de voz no revelado',
+            
+            # French
+            'audio omis', 'message vocal omis',
+            
+            # German
+            'audio ausgelassen', 'sprachnachricht ausgelassen',
+            
+            # Italian
+            'audio omesso', 'messaggio vocale omesso',
+            
+            # Dutch
+            'audio weggelaten', 'spraakbericht weggelaten',
+            
+            # Russian
+            'аудио не включено', 'голосовое сообщение не включено',
+            
+            # Arabic
+            'تم حذف الصوت',
+            
+            # Hindi
+            'ऑडियो हटाया गया',
+            
+            # Chinese
+            '音频已省略', '语音消息已省略',
+            
+            # Japanese
+            '音声が省略されました',
+            
+            # Turkish
+            'ses atlandı',
+            
+            # Polish
+            'pominięto audio'
+        ]
+        return any(pattern in text for pattern in audio_patterns)
+    
+    # Helper function to detect sticker messages specifically
+    def is_sticker_message(text):
+        if pd.isna(text):
+            return False
+        text = str(text).lower()
+        sticker_patterns = [
+            # English
+            'sticker omitted', '<sticker omitted>',
+            
+            # Portuguese
+            'figurinha não revelada', 'figurinha omitida',
+            'sticker não revelado',  # Portuguese (Portugal)
+            
+            # Spanish
+            'pegatina omitida', 'pegatina no revelada',
+            
+            # French
+            'autocollant omis', '<autocollant omis>',
+            
+            # German
+            'sticker ausgelassen', '<sticker ausgelassen>',
+            
+            # Italian
+            'adesivo omesso', '<adesivo omesso>',
+            
+            # Dutch
+            'sticker weggelaten', '<sticker weggelaten>',
+            
+            # Russian
+            'стикер не включён', 'стикер не включен',
+            
+            # Arabic
+            'تم حذف الملصق',
+            
+            # Hindi
+            'स्टिकर हटाया गया',
+            
+            # Chinese
+            '贴纸已省略', '贴纸未包含',
+            
+            # Japanese
+            'ステッカーが省略されました',
+            
+            # Turkish
+            'çıkartma atlandı',
+            
+            # Polish
+            'pominięto naklejkę'
+        ]
+        return any(pattern in text for pattern in sticker_patterns)
+    
     message_col = 'message' if 'message' in df.columns else 'content'
     
     # ========== 1. MESSAGES PER USER (for bar chart & pie chart) ==========
@@ -444,6 +551,15 @@ def compute_chart_data(df):
         # Calculate text and media counts
         media_count = sum(1 for msg in user_messages if is_media_message(msg))
         text_count = int(total_count) - media_count
+        
+        # Calculate emoji count (messages containing at least one emoji)
+        emoji_count = sum(1 for msg in user_messages if has_emoji(msg))
+        
+        # Calculate audio count (audio/voice messages specifically)
+        audio_count = sum(1 for msg in user_messages if is_audio_message(msg))
+        
+        # Calculate sticker count (sticker messages specifically)
+        sticker_count = sum(1 for msg in user_messages if is_sticker_message(msg))
         
         # Calculate time-of-day counts
         # Morning: 6:00 - 11:59
@@ -463,6 +579,9 @@ def compute_chart_data(df):
             "count": int(total_count),
             "textCount": text_count,
             "mediaCount": media_count,
+            "emojiCount": emoji_count,
+            "audioCount": audio_count,
+            "stickerCount": sticker_count,
             "morningCount": morning_count,
             "afternoonCount": afternoon_count,
             "nightCount": night_count,
@@ -727,12 +846,10 @@ def analyze_zip():
             # Save uploaded ZIP file
             zip_path = os.path.join(tmpdir, file.filename)
             file.save(zip_path)
-            app.logger.info(f"Saved ZIP to: {zip_path}")
 
             # Extract ZIP file
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(tmpdir)
-            app.logger.info(f"Extracted ZIP to: {tmpdir}")
 
             # Find the chat .txt file (WhatsApp exports are usually named _chat.txt)
             chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
@@ -746,13 +863,11 @@ def analyze_zip():
 
             # Use the first chat file found
             chat_file_path = chat_files[0]
-            app.logger.info(f"Found chat file: {chat_file_path}")
             
             # Parse the chat file using the existing parser
             try:
                 parser = WhatsAppChatParser()
                 df = parser.parse_to_csv(chat_file_path)
-                app.logger.info(f"Parsed {len(df)} messages")
             except Exception as parse_error:
                 app.logger.error(f"Error parsing chat file: {parse_error}")
                 app.logger.error(traceback.format_exc())
@@ -766,8 +881,6 @@ def analyze_zip():
             total_messages = len(df)
             participants = df['sender'].unique()
             participants_count = len(participants)
-            
-            app.logger.info(f"Total messages: {total_messages}, Participants: {participants_count}")
             
             # Find top user (user with most messages)
             sender_counts = df['sender'].value_counts()
@@ -797,10 +910,9 @@ def analyze_zip():
                 try:
                     session_id = create_rag_session(df)
                     expires_in_seconds = RAG_CACHE_TTL
-                    app.logger.info(f"Created RAG session: {session_id}")
                 except Exception as rag_error:
-                    app.logger.warning(f"Failed to create RAG session: {rag_error}")
                     # Don't fail the whole request, just skip RAG
+                    pass
 
             # Build response with all data for frontend
             stats = {
@@ -839,7 +951,6 @@ def analyze_zip():
                 "peakHour": chart_data["peakHour"],
             }
             
-            app.logger.info(f"Returning stats with {len(stats)} fields, RAG enabled: {enable_rag}")
             return jsonify(stats)
             
     except Exception as e:
