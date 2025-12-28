@@ -2,7 +2,9 @@ package com.whatsappanalytics.whatsapp_analytics_backend.service;
 
 import com.stripe.Stripe;
 import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
 import com.stripe.model.checkout.Session;
+import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.checkout.SessionCreateParams;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -10,6 +12,9 @@ import com.whatsappanalytics.whatsapp_analytics_backend.dto.CheckoutSessionRespo
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.PaymentRequestDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @Slf4j
@@ -65,6 +70,43 @@ public class PaymentService {
         return new CheckoutSessionResponseDto(session.getId(), session.getUrl());
     }
 
+    public Map<String, String> createPaymentIntent(String type, String packageId, Long amount, User user) throws StripeException {
+        Stripe.apiKey = stripeApiKey;
+        
+        log.info("Creating PaymentIntent for user: {}", user.getEmail());
+        
+        // Create metadata
+        Map<String, String> metadata = new HashMap<>();
+        metadata.put("type", type);
+        metadata.put("packageId", packageId);
+        metadata.put("userEmail", user.getEmail());
+        metadata.put("amount", String.valueOf(amount));
+        
+        // Create PaymentIntent with automatic payment methods enabled
+        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                .setAmount(amount)
+                .setCurrency("eur")  // ✅ Must be EUR for MB WAY
+                .setDescription("Whatsapp Analytics - " + type)
+                .putAllMetadata(metadata)
+                .setReceiptEmail(user.getEmail())
+                .setAutomaticPaymentMethods(
+                    PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                        .setEnabled(true)  // ✅ Enable ALL configured payment methods
+                        .build()
+                )
+                .build();
+        
+        PaymentIntent paymentIntent = PaymentIntent.create(params);
+        
+        log.info("Created PaymentIntent: {} with automatic payment methods enabled", paymentIntent.getId());
+        
+        Map<String, String> result = new HashMap<>();
+        result.put("paymentIntentId", paymentIntent.getId());
+        result.put("clientSecret", paymentIntent.getClientSecret());
+        
+        return result;
+    }
+    
     private String getPriceId(String packageId) {
         log.info("Getting Stripe Price ID for package: {}", packageId);
         
