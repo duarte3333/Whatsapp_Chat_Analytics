@@ -49,6 +49,12 @@ public class User implements UserDetails {
     @Column(name = "verification_expiration")
     private LocalDateTime verificationCodeExpiresAt;
 
+    @Column(name = "password_reset_code")
+    private String passwordResetCode;
+
+    @Column(name = "password_reset_expiration")
+    private LocalDateTime passwordResetCodeExpiresAt;
+
     @Column(name = "credits", nullable = false)
     private Integer remainingCredits = 3;
 

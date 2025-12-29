@@ -107,6 +107,7 @@ def create_rag_session(df, session_id=None):
             "created_at": time.time(),
             "message_count": len(df),
             "participants": list(df['sender'].unique()),
+            "conversation_history": [],  # Store Q&A pairs for conversation context
         }
     
     return session_id
@@ -207,13 +208,22 @@ def rag_ask():
         context = session["context"]
         included_messages = session["included_messages"]
         total_messages = session["total_messages"]
+        conversation_history = session.get("conversation_history", [])
+        
+        # Build conversation history string if there are previous Q&A pairs
+        history_text = ""
+        if conversation_history:
+            history_text = "\n\nPREVIOUS CONVERSATION:\n"
+            for i, (prev_q, prev_a) in enumerate(conversation_history, 1):
+                history_text += f"Q{i}: {prev_q}\nA{i}: {prev_a}\n"
+            history_text += "\n"
         
         prompt = f"""
         You are an expert conversation analyst analyzing a WhatsApp chat.
 
         Your task is to answer the user's question using ONLY the chat messages provided.
         Do NOT use outside knowledge. Do NOT guess.
-
+        {history_text}
         CHAT MESSAGES
         (Most recent {included_messages} of {total_messages} total messages):
         --------------------
@@ -267,17 +277,33 @@ def rag_ask():
         )
         
         response = model.invoke(prompt)
+        answer_content = response.content
+        
+        # Save Q&A pair to conversation history
+        with rag_cache_lock:
+            if session_id in rag_cache:
+                if "conversation_history" not in rag_cache[session_id]:
+                    rag_cache[session_id]["conversation_history"] = []
+                rag_cache[session_id]["conversation_history"].append((question, answer_content))
         
         # Calculate remaining TTL
         time_elapsed = time.time() - session["created_at"]
         time_remaining = max(0, RAG_CACHE_TTL - time_elapsed)
+        
+        # Get updated conversation history for response
+        updated_session = get_rag_session(session_id)
+        conversation_history = updated_session.get("conversation_history", []) if updated_session else []
 
         return jsonify({
-            "answer": response.content,
+            "answer": answer_content,
             "messages_used": included_messages,
             "total_messages": total_messages,
             "session_id": session_id,
             "expires_in_seconds": int(time_remaining),
+            "conversation_history": [
+                {"question": q, "answer": a} 
+                for q, a in conversation_history
+            ],
         })
 
     except Exception as e:
@@ -300,6 +326,8 @@ def rag_status(session_id):
     time_elapsed = time.time() - session["created_at"]
     time_remaining = max(0, RAG_CACHE_TTL - time_elapsed)
     
+    conversation_history = session.get("conversation_history", [])
+    
     return jsonify({
         "valid": True,
         "session_id": session_id,
@@ -308,6 +336,10 @@ def rag_status(session_id):
         "context_tokens": session["context_tokens"],
         "participants": session["participants"],
         "expires_in_seconds": int(time_remaining),
+        "conversation_history": [
+            {"question": q, "answer": a} 
+            for q, a in conversation_history
+        ],
     })
 
 
