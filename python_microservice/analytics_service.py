@@ -960,32 +960,6 @@ def analyze_zip():
         return jsonify({"error": error_msg}), 500
 
 
-# ============================================================
-# ALIAS ENDPOINTS (for frontend compatibility)
-# ============================================================
-
-@app.route("/metrics/chat/upload-anonymous", methods=["POST"])
-def upload_anonymous():
-    """Alias for /analyze - used by frontend GuestUpload."""
-    return analyze_zip()
-
-
-@app.route("/llm/analyze", methods=["POST"])
-def llm_analyze():
-    data = request.get_json()
-    chat_id = data.get("chat_id")
-    user_id = data.get("user_id")
-    question = data.get("question")
-
-    model = ChatOpenAI(
-        model="gpt-4o-mini",
-        api_key=os.getenv("OPENAI_API_KEY")
-    )
-
-    response = model.invoke(question)
-    return jsonify({"answer": response.content})
-
-
 if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
