@@ -49,11 +49,11 @@ public class ChatMetricsController {
             return "File must be a ZIP file";
         }
         
-        // Check file size (1MB = 1024 * 1024 bytes)
-        long maxSize = 1 * 1024 * 1024; // 1MB
+        // Check file size (5MB = 5 * 1024 * 1024 bytes)
+        long maxSize = 5 * 1024 * 1024; // 5MB
         long fileSize = file.getSize();
         if (fileSize > maxSize) {
-            return "File size exceeds 1MB limit";
+            return "File size exceeds 5MB limit";
         }
         
         // Check if ZIP contains _chat.txt file
