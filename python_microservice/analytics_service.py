@@ -124,28 +124,42 @@ def get_rag_session(session_id):
 
 @app.route("/rag/upload", methods=["POST"])
 def rag_upload():
-    """Upload a chat for ephemeral RAG. Returns session_id valid for 10 minutes."""
+    """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
     file = request.files.get("file")
-    if file is None or not file.filename.endswith(".zip"):
-        return jsonify({"error": "Invalid file. Please upload a ZIP file."}), 400
+    if file is None:
+        return jsonify({"error": "No file provided"}), 400
+    
+    filename = file.filename.lower()
+    if not (filename.endswith(".zip") or filename.endswith(".txt")):
+        return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Save and extract ZIP
-            zip_path = os.path.join(tmpdir, file.filename)
-            file.save(zip_path)
+            chat_file_path = None
             
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
+            # Handle TXT files directly
+            if filename.endswith(".txt"):
+                txt_path = os.path.join(tmpdir, file.filename)
+                file.save(txt_path)
+                chat_file_path = txt_path
+            else:
+                # Handle ZIP files (extract and find chat file)
+                zip_path = os.path.join(tmpdir, file.filename)
+                file.save(zip_path)
+                
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmpdir)
 
-            # Find chat file
-            chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
-            if not chat_files:
-                return jsonify({"error": "No chat file found in ZIP"}), 400
+                # Find chat file
+                chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                if not chat_files:
+                    return jsonify({"error": "No chat file found in ZIP"}), 400
+                
+                chat_file_path = chat_files[0]
 
             # Parse chat
             parser = WhatsAppChatParser()
-            df = parser.parse_to_csv(chat_files[0])
+            df = parser.parse_to_csv(chat_file_path)
             
             if df.empty:
                 return jsonify({"error": "No messages found in chat"}), 400
@@ -430,8 +444,8 @@ def compute_chart_data(df):
         if pd.isna(text):
             return False
         text_str = str(text)
-        # Check if any character in the text is an emoji
-        return any(c in emoji_lib.EMOJI_DATA for c in text_str)
+        # Use emoji_list() to properly detect emojis with skin tone modifiers
+        return len(emoji_lib.emoji_list(text_str)) > 0
     
     # Helper function to detect audio/voice messages specifically
     def is_audio_message(text):
@@ -611,9 +625,11 @@ def compute_chart_data(df):
     
     # ========== 4. MESSAGE TYPE BREAKDOWN (for radar chart) ==========
     def count_emojis(text):
+        """Count emojis in text, including those with skin tone modifiers."""
         if pd.isna(text):
             return 0
-        return len([c for c in str(text) if c in emoji_lib.EMOJI_DATA])
+        # Use emoji_list() to properly count emojis with modifiers as single units
+        return len(emoji_lib.emoji_list(str(text)))
     
     message_type_breakdown = []
     
@@ -636,10 +652,23 @@ def compute_chart_data(df):
     
     # ========== 5. TOP EMOJIS (overall and per user) ==========
     def extract_emojis(text):
-        """Extract all emojis from text as a list."""
+        """Extract all emojis from text as a list, preserving skin tone modifiers."""
         if pd.isna(text):
             return []
-        return [c for c in str(text) if c in emoji_lib.EMOJI_DATA]
+        
+        text_str = str(text)
+        emojis = []
+        
+        # Use emoji_list() to properly extract emojis with skin tone modifiers
+        # This preserves multi-character emojis (base + modifier) as single units
+        emoji_list = emoji_lib.emoji_list(text_str)
+        
+        for emoji_info in emoji_list:
+            # Extract the emoji character(s) including modifiers
+            emoji_char = emoji_info['emoji']
+            emojis.append(emoji_char)
+        
+        return emojis
     
     # Count all emojis in the chat
     all_emojis = []
@@ -824,10 +853,10 @@ def compute_chart_data(df):
 @app.route("/analyze", methods=["POST"])
 def analyze_zip():
     """
-    Upload a WhatsApp chat ZIP file and get metrics + RAG session.
+    Upload a WhatsApp chat file (ZIP or TXT) and get metrics + RAG session.
     
     Query params:
-        - enable_rag: "true" to create RAG session (default: true)
+        - enable_rag: "true" to create RAG session (default: false)
     
     Returns:
         - All metrics/chart data
@@ -835,34 +864,47 @@ def analyze_zip():
         - expires_in_seconds: TTL for RAG session
     """
     file = request.files.get("file")
-    if file is None or not file.filename.endswith(".zip"):
-        return jsonify({"error": "Invalid file"}), 400
+    if file is None:
+        return jsonify({"error": "No file provided"}), 400
+    
+    filename = file.filename.lower()
+    if not (filename.endswith(".zip") or filename.endswith(".txt")):
+        return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
 
     # Check if RAG should be enabled (default: false for speed)
     enable_rag = request.args.get("enable_rag", "false").lower() == "true"
 
     try:
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Save uploaded ZIP file
-            zip_path = os.path.join(tmpdir, file.filename)
-            file.save(zip_path)
-
-            # Extract ZIP file
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdir)
-
-            # Find the chat .txt file (WhatsApp exports are usually named _chat.txt)
-            chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
-            if not chat_files:
-                # Try alternative patterns
-                chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+            chat_file_path = None
             
-            if not chat_files:
-                app.logger.error(f"No chat file found in ZIP. Contents: {os.listdir(tmpdir)}")
-                return jsonify({"error": "No chat file found in ZIP"}), 400
+            # Handle TXT files directly
+            if filename.endswith(".txt"):
+                # Save TXT file directly
+                txt_path = os.path.join(tmpdir, file.filename)
+                file.save(txt_path)
+                chat_file_path = txt_path
+            else:
+                # Handle ZIP files (extract and find chat file)
+                zip_path = os.path.join(tmpdir, file.filename)
+                file.save(zip_path)
 
-            # Use the first chat file found
-            chat_file_path = chat_files[0]
+                # Extract ZIP file
+                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(tmpdir)
+
+                # Find the chat .txt file (WhatsApp exports are usually named _chat.txt)
+                chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
+                if not chat_files:
+                    # Try alternative patterns
+                    chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                
+                if not chat_files:
+                    app.logger.error(f"No chat file found in ZIP. Contents: {os.listdir(tmpdir)}")
+                    return jsonify({"error": "No chat file found in ZIP"}), 400
+
+                # Use the first chat file found
+                chat_file_path = chat_files[0]
             
             # Parse the chat file using the existing parser
             try:

@@ -26,7 +26,7 @@ public class ShareLinkService {
     private final GroupChatRepository groupChatRepository;
     private final ChatMetricsService chatMetricsService;
     private static final SecureRandom random = new SecureRandom();
-    private static final int TOKEN_LENGTH = 32;
+    private static final int TOKEN_LENGTH = 16; // Reduced from 32 to 16 bytes for shorter URLs (~22 chars instead of ~43)
 
     public ShareLinkService(
             ShareLinkRepository shareLinkRepository,
