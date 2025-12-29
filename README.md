@@ -8,7 +8,7 @@ Chatlytics is a WhatsApp chat analytics platform that extracts insights from cha
 
 The platform includes an **AI-driven** question-answering feature powered by a Retrieval Augmented Generation (**RAG**) system using OpenAI GPT models. This allows users to ask natural language questions and receive responses grounded in their actual chat data. Only aggregated statistics are stored in the **PostgreSQL** database, while raw chat data is processed in memory and not persisted.
 
-Chatlytics uses a microservices architecture with a Spring Boot backend for authentication and data management, and a Python **Flask** service for chat processing, analytics, and AI tasks. The system is deployed on a **AWS EC2** with **NGINX** as a reverse proxy to ensure secure and scalable operation.
+Chatlytics uses a microservices architecture with a **Spring Boot** backend for authentication and data management, and a Python **Flask** service for chat processing, analytics, and AI tasks. The frontend is built with **React** and the system is deployed on a **AWS EC2** with **NGINX** as a reverse proxy to ensure secure and scalable operation.
 
 ## Architecture Overview
 
