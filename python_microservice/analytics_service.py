@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 import glob
 import traceback
 import pandas as pd
+import numpy as np
 import emoji as emoji_lib
 import uuid
 import time
@@ -36,6 +37,32 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 app.json.ensure_ascii = False
 
+# Configure Flask to always return JSON errors
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+
+# Helper function to convert NumPy/Pandas types to Python native types
+def make_json_serializable(obj):
+    """Recursively convert NumPy/Pandas types to Python native types."""
+    
+    if isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
+    elif isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [make_json_serializable(item) for item in obj]
+    elif pd.isna(obj):
+        return None
+    else:
+        return obj
+
 # Global error handler to ensure JSON responses (only for unhandled errors)
 @app.errorhandler(500)
 def handle_500_error(e):
@@ -46,10 +73,46 @@ def handle_500_error(e):
     app.logger.error(error_traceback)
     
     # Always return JSON, even for unhandled errors
-    return jsonify({
-        "error": error_msg,
-        "details": error_traceback if app.debug else "Check server logs for details"
-    }), 500
+    try:
+        error_response = {
+            "error": error_msg,
+            "details": error_traceback if app.debug else "Check server logs for details"
+        }
+        error_response_serializable = make_json_serializable(error_response)
+        return jsonify(error_response_serializable), 500
+    except Exception as json_error:
+        # Fallback: return plain JSON string
+        app.logger.error(f"Failed to jsonify error response: {json_error}")
+        from flask import Response
+        return Response(
+            '{"error": "Internal server error occurred"}',
+            mimetype='application/json',
+            status=500
+        )
+
+# Handle all exceptions
+@app.errorhandler(Exception)
+def handle_all_exceptions(e):
+    """Catch all exceptions and return JSON."""
+    error_msg = str(e) if e else "Unknown error"
+    error_traceback = traceback.format_exc()
+    app.logger.error(f"Unhandled exception: {error_msg}")
+    app.logger.error(error_traceback)
+    
+    try:
+        error_response = {
+            "error": error_msg,
+            "details": error_traceback if app.debug else "Check server logs for details"
+        }
+        error_response_serializable = make_json_serializable(error_response)
+        return jsonify(error_response_serializable), 500
+    except Exception as json_error:
+        from flask import Response
+        return Response(
+            '{"error": "Internal server error occurred"}',
+            mimetype='application/json',
+            status=500
+        )
 
 # ============================================================
 # EPHEMERAL RAG CACHE (TTL = 10 minutes)
@@ -1084,7 +1147,9 @@ def analyze_zip():
                 "peakHour": chart_data["peakHour"],
             }
             
-            return jsonify(stats)
+            # Ensure all values are JSON serializable before returning
+            stats_serializable = make_json_serializable(stats)
+            return jsonify(stats_serializable)
             
     except Exception as e:
         error_msg = f"Error processing file: {str(e)}"
@@ -1093,14 +1158,23 @@ def analyze_zip():
         app.logger.error(error_traceback)
         # Always return JSON, even on error
         try:
-            return jsonify({
+            error_response = {
                 "error": error_msg,
                 "details": error_traceback if app.debug else "Check server logs for details"
-            }), 500
+            }
+            # Ensure error response is serializable
+            error_response_serializable = make_json_serializable(error_response)
+            return jsonify(error_response_serializable), 500
         except Exception as json_error:
-            # Fallback if jsonify fails
+            # Fallback if jsonify fails - return plain text JSON string
             app.logger.error(f"Failed to return JSON error: {json_error}")
-            return jsonify({"error": "Internal server error occurred"}), 500
+            app.logger.error(traceback.format_exc())
+            from flask import Response
+            return Response(
+                '{"error": "Internal server error occurred"}',
+                mimetype='application/json',
+                status=500
+            )
 
 
 if __name__ == "__main__":
