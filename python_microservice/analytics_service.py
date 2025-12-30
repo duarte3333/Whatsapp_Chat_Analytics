@@ -251,26 +251,54 @@ def get_rag_session(session_id):
 @limiter.limit("50 per hour")  # Relaxed for file uploads
 def rag_upload():
     """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
-    file = request.files.get("file")
-    if file is None:
-        return jsonify({"error": "No file provided"}), 400
-    
-    filename = file.filename
-    if not filename:
-        return jsonify({"error": "Invalid filename"}), 400
-    
-    # Security validation
-    file_size = file.content_length if hasattr(file, 'content_length') else 0
-    validation_error = validate_file_upload(filename, file_size)
-    if validation_error:
-        app.logger.warning(f"File validation failed: {validation_error}")
-        return jsonify({"error": validation_error}), 400
-    
-    filename_lower = filename.lower()
-    if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
-        return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
-
     try:
+        app.logger.info("=== /rag/upload endpoint called ===")
+        
+        file = request.files.get("file")
+        if file is None:
+            app.logger.warning("No file provided in request")
+            return jsonify({"error": "No file provided"}), 400
+        
+        filename = file.filename
+        if not filename:
+            app.logger.warning("Invalid filename (empty)")
+            return jsonify({"error": "Invalid filename"}), 400
+        
+        app.logger.info(f"Received file: {filename}")
+        
+        # Get file size more reliably
+        file_size = 0
+        if hasattr(file, 'content_length') and file.content_length:
+            file_size = file.content_length
+        else:
+            # Try to get size from Content-Length header
+            content_length = request.headers.get('Content-Length')
+            if content_length:
+                try:
+                    file_size = int(content_length)
+                except ValueError:
+                    pass
+        
+        app.logger.info(f"File size: {file_size} bytes")
+        
+        # Basic filename validation (size check will be done after saving)
+        filename_lower = filename.lower()
+        if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
+            app.logger.warning(f"Invalid file type: {filename}")
+            return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
+        
+        # Validate filename for security (but allow size check after saving)
+        if not is_valid_filename(filename):
+            app.logger.warning(f"Invalid or dangerous filename: {filename}")
+            return jsonify({"error": "Invalid or dangerous filename"}), 400
+        
+        # If we have a size, validate it
+        if file_size > 0:
+            validation_error = validate_file_upload(filename, file_size)
+            if validation_error:
+                app.logger.warning(f"File validation failed: {validation_error}")
+                return jsonify({"error": validation_error}), 400
+
         with tempfile.TemporaryDirectory() as tmpdir:
             chat_file_path = None
             
@@ -280,12 +308,33 @@ def rag_upload():
                 safe_filename = is_valid_filename(filename) and filename or "chat.txt"
                 txt_path = os.path.join(tmpdir, safe_filename)
                 file.save(txt_path)
+                
+                # Check file size after saving
+                actual_size = os.path.getsize(txt_path)
+                app.logger.info(f"Saved TXT file, actual size: {actual_size} bytes")
+                
+                if actual_size == 0:
+                    return jsonify({"error": "File is empty"}), 400
+                
+                if actual_size > 5 * 1024 * 1024:
+                    return jsonify({"error": "File size exceeds 5MB limit"}), 400
+                
                 chat_file_path = txt_path
             else:
                 # Handle ZIP files (extract and find chat file)
                 safe_filename = is_valid_filename(filename) and filename or "chat.zip"
                 zip_path = os.path.join(tmpdir, safe_filename)
                 file.save(zip_path)
+                
+                # Check file size after saving
+                actual_size = os.path.getsize(zip_path)
+                app.logger.info(f"Saved ZIP file, actual size: {actual_size} bytes")
+                
+                if actual_size == 0:
+                    return jsonify({"error": "File is empty"}), 400
+                
+                if actual_size > 5 * 1024 * 1024:
+                    return jsonify({"error": "File size exceeds 5MB limit"}), 400
                 
                 # Safe extraction with validation
                 error_msg, chat_file_path = safe_extract_zip(zip_path, tmpdir)
@@ -303,16 +352,22 @@ def rag_upload():
                     chat_file_path = chat_files[0]
 
             # Parse chat
+            app.logger.info(f"Parsing chat file: {chat_file_path}")
             parser = WhatsAppChatParser()
             df = parser.parse_to_csv(chat_file_path)
             
             if df.empty:
+                app.logger.warning("No messages found in chat file")
                 return jsonify({"error": "No messages found in chat"}), 400
 
+            app.logger.info(f"Parsed {len(df)} messages from chat")
+            
             # Create RAG session
             session_id = create_rag_session(df)
             group_title = parser.group_name if parser.group_name else "WhatsApp Chat"
 
+            app.logger.info(f"RAG session created: {session_id}")
+            
             #convert python dictionary to json
             return jsonify({
                 "session_id": session_id,
