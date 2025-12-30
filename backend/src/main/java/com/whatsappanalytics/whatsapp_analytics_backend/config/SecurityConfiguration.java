@@ -46,12 +46,14 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
         .authorizeHttpRequests(authorize -> authorize
             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
             .requestMatchers(HttpMethod.POST, "/shared/guest").permitAll()
+            .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
             .requestMatchers(
                 "/auth/**",
                 "/oauth2/**",
                 "/login/**",
                 "/v3/api-docs/**",
                 "/api/payments/webhook",
+		"/payments/webhook",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
                 "/metrics/chat/upload-anonymous",
@@ -66,7 +68,8 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .exceptionHandling(exception -> exception
             .authenticationEntryPoint((request, response, authException) -> {
-                response.setContentType("application/json");
+                response.setContentType("application/json;charset=UTF-8");
+                response.setCharacterEncoding("UTF-8");
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.getWriter().write("{\"error\": \"Unauthorized\", \"message\": \"" + authException.getMessage() + "\"}");
             }))
