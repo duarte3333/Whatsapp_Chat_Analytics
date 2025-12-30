@@ -9,6 +9,8 @@ import com.stripe.net.Webhook;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 @Slf4j
@@ -46,10 +48,15 @@ public class StripeWebhookService {
         try {
             log.info("Processing checkout.session.completed webhook");
             
-            // Simple regex-based extraction from metadata
-            String type = extractValueByKey(payload, "\"type\"");
-            String creditsStr = extractValueByKey(payload, "\"credits\"");
-            String userEmail = extractValueByKey(payload, "\"userEmail\"");
+            // Parse JSON properly
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode json = mapper.readTree(payload);
+            JsonNode dataObject = json.get("data").get("object");
+            JsonNode metadata = dataObject.get("metadata");
+            
+            String type = metadata != null && metadata.has("type") ? metadata.get("type").asText() : null;
+            String userEmail = metadata != null && metadata.has("userEmail") ? metadata.get("userEmail").asText() : null;
+            String creditsStr = metadata != null && metadata.has("credits") ? metadata.get("credits").asText() : null;
             
             log.info("Extracted - Type: {}, Credits: {}, Email: {}", type, creditsStr, userEmail);
             
@@ -89,12 +96,17 @@ public class StripeWebhookService {
         try {
             log.info("Processing payment_intent.succeeded webhook");
             
-            // Extract metadata from payment intent
-            String type = extractValueByKey(payload, "\"type\"");
-            String userEmail = extractValueByKey(payload, "\"userEmail\"");
-            String amountStr = extractValueByKey(payload, "\"amount\"");
+            // Parse JSON properly
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode json = mapper.readTree(payload);
+            JsonNode dataObject = json.get("data").get("object");
+            JsonNode metadata = dataObject.get("metadata");
             
-            log.info("Extracted - Type: {}, Email: {}, Amount (cents): {}", type, userEmail, amountStr);
+            String type = metadata != null && metadata.has("type") ? metadata.get("type").asText() : null;
+            String userEmail = metadata != null && metadata.has("userEmail") ? metadata.get("userEmail").asText() : null;
+            long amount = dataObject.get("amount").asLong();
+            
+            log.info("Extracted - Type: {}, Email: {}, Amount (cents): {}", type, userEmail, amount);
             
             if (userEmail != null && !userEmail.isEmpty() && type != null) {
                 User user = userRepository.findByEmail(userEmail).orElse(null);
@@ -104,7 +116,7 @@ public class StripeWebhookService {
                     
                     if ("credits".equals(type)) {
                         // Determine credits based on amount (in cents)
-                        int credits = getCreditsForAmount(Long.parseLong(amountStr != null ? amountStr : "0"));
+                        int credits = getCreditsForAmount(amount);
                         int oldCredits = user.getRemainingCredits() != null ? user.getRemainingCredits() : 0;
                         int newCredits = oldCredits + credits;
                         user.setRemainingCredits(newCredits);
@@ -140,39 +152,4 @@ public class StripeWebhookService {
             }
         };
     }
-    
-    private String extractValueByKey(String json, String key) {
-        try {
-            int keyIndex = json.indexOf(key);
-            if (keyIndex == -1) return null;
-            
-            int colonIndex = json.indexOf(":", keyIndex);
-            if (colonIndex == -1) return null;
-            
-            int startIndex = colonIndex + 1;
-            while (startIndex < json.length() && json.charAt(startIndex) == ' ') {
-                startIndex++;
-            }
-            
-            if (startIndex >= json.length()) return null;
-            
-            // Handle quoted strings
-            if (json.charAt(startIndex) == '"') {
-                int endIndex = json.indexOf('"', startIndex + 1);
-                if (endIndex == -1) return null;
-                return json.substring(startIndex + 1, endIndex);
-            }
-            
-            // Handle numbers or unquoted values
-            int endIndex = startIndex;
-            while (endIndex < json.length() && json.charAt(endIndex) != ',' && json.charAt(endIndex) != '}') {
-                endIndex++;
-            }
-            return json.substring(startIndex, endIndex).trim();
-        } catch (Exception e) {
-            log.warn("Failed to extract value for key: {}", key);
-            return null;
-        }
-    }
-    
 }

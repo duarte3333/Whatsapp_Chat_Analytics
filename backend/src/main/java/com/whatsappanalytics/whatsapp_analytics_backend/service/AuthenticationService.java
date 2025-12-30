@@ -91,20 +91,76 @@ public void resendVerificationCode(String email) {
     }
 
     public void sendVerificationEmail(User user) {
-        String subject = "Your Verification Code";
+        String subject = "Welcome to ChatLytics - Email Verification Required";
         String verificationCode = user.getVerificationCode();
         String htmlMessage = "<html>"
-        + "<body style=\"font-family: Arial, sans-serif;\">"
-        + "<div style=\"background-color: #f5f5f5; padding: 20px;\">"
-        + "<h2 style=\"color: #333;\">Welcome to our app!</h2>"
-        + "<p style=\"font-size: 16px;\">Please enter the verification code below to continue:</p>"
-        + "<div style=\"background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1);\">"
-        + "<h3 style=\"color: #333;\">Verification Code:</h3>"
-        + "<p style=\"font-size: 18px; font-weight: bold; color: #007bff;\">" + verificationCode + "</p>"
-        + "</div>"
-        + "</div>"
-        + "</body>"
-        + "</html>";
+            + "<head>"
+            + "<meta charset=\"UTF-8\">"
+            + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+            + "</head>"
+            + "<body style=\"margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc;\">"
+            + "<div style=\"max-width: 600px; margin: 0 auto; background-color: #ffffff;\">"
+            
+            // Header
+            + "<div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;\">"
+            + "<h1 style=\"color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;\">ChatLytics</h1>"
+            + "<p style=\"color: #e2e8f0; margin: 8px 0 0 0; font-size: 16px;\">Unlock Your WhatsApp Insights</p>"
+            + "</div>"
+            
+            // Main Content
+            + "<div style=\"padding: 40px 30px;\">"
+            + "<h2 style=\"color: #1a202c; margin: 0 0 20px 0; font-size: 24px; font-weight: 600;\">Welcome to ChatLytics!</h2>"
+            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 25px 0;\">"
+            + "Thank you for joining ChatLytics, the premier platform for analyzing your WhatsApp conversations. "
+            + "We're excited to help you discover valuable insights from your chat data."
+            + "</p>"
+            
+            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;\">"
+            + "To get started and secure your account, please verify your email address using the code below:"
+            + "</p>"
+            
+            // Verification Code Box
+            + "<div style=\"background-color: #f7fafc; border: 2px dashed #cbd5e0; padding: 30px; text-align: center; border-radius: 12px; margin: 30px 0;\">"
+            + "<h3 style=\"color: #2d3748; margin: 0 0 15px 0; font-size: 18px; font-weight: 600;\">Your Verification Code</h3>"
+            + "<div style=\"background-color: #667eea; color: #ffffff; padding: 15px 25px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: 700; letter-spacing: 2px; font-family: 'Courier New', monospace;\">"
+            + verificationCode
+            + "</div>"
+            + "<p style=\"color: #718096; font-size: 14px; margin: 15px 0 0 0;\">Enter this code in the verification form</p>"
+            + "</div>"
+            
+            + "<div style=\"background-color: #fff5f5; border-left: 4px solid #f56565; padding: 20px; margin: 25px 0; border-radius: 0 8px 8px 0;\">"
+            + "<p style=\"color: #c53030; font-size: 14px; margin: 0; font-weight: 500;\">⚠️ Important: This code expires in 15 minutes</p>"
+            + "</div>"
+            
+            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 25px 0 0 0;\">"
+            + "Once verified, you'll be able to:"
+            + "</p>"
+            + "<ul style=\"color: #4a5568; font-size: 16px; line-height: 1.8; padding-left: 20px;\">"
+            + "<li>Upload and analyze your WhatsApp chat exports</li>"
+            + "<li>Generate detailed conversation insights and statistics</li>"
+            + "<li>Use our AI-powered chat analysis features</li>"
+            + "<li>Access premium analytics tools</li>"
+            + "</ul>"
+            + "</div>"
+            
+            // Footer
+            + "<div style=\"background-color: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;\">"
+            + "<p style=\"color: #718096; font-size: 14px; margin: 0 0 10px 0;\">"
+            + "Need help? Contact our support team at <a href=\"mailto:chatlyticshelp@gmail.com\" style=\"color: #667eea; text-decoration: none;\">chatlyticshelp@gmail.com</a>"
+            + "</p>"
+            + "<p style=\"color: #a0aec0; font-size: 12px; margin: 0;\">"
+            + "If you didn't create an account with ChatLytics, please ignore this email."
+            + "</p>"
+            + "<div style=\"margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;\">"
+            + "<p style=\"color: #a0aec0; font-size: 12px; margin: 0;\">"
+            + "© 2025 ChatLytics. All rights reserved."
+            + "</p>"
+            + "</div>"
+            + "</div>"
+            
+            + "</div>"
+            + "</body>"
+            + "</html>";
 
         try {
             emailService.sendVerificationEmail(user.getEmail(), subject, htmlMessage);
