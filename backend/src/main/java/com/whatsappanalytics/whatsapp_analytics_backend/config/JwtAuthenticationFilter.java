@@ -109,6 +109,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * Check if the request path is a public endpoint that doesn't require authentication
      */
     private boolean isPublicEndpoint(String path) {
+        // Exclude /auth/user from public endpoints - it requires authentication
+        if (path.equals("/auth/user") || path.equals("/api/auth/user")) {
+            return false;
+        }
         return path.startsWith("/auth/") ||
                path.startsWith("/oauth2/") ||
                path.startsWith("/login/") ||

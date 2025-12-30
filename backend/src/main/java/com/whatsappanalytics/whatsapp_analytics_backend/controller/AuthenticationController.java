@@ -173,7 +173,17 @@ public class AuthenticationController {
         }
 
         try {
-            User user = (User) authentication.getPrincipal();
+            // Check if principal is a User object (not a String)
+            Object principal = authentication.getPrincipal();
+            
+            if (!(principal instanceof User)) {
+                System.err.println("Principal is not a User object. Type: " + 
+                    (principal != null ? principal.getClass().getName() : "null") + 
+                    ", Value: " + principal);
+                return ResponseEntity.status(401).build();
+            }
+
+            User user = (User) principal;
 
             if (user == null) {
                 return ResponseEntity.status(401).build();
@@ -182,8 +192,13 @@ public class AuthenticationController {
             System.out.println("Fetching user info for: " + user.getEmail());
             return ResponseEntity.ok(user);
 
+        } catch (ClassCastException e) {
+            System.err.println("Error casting principal to User: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(401).build();
         } catch (Exception e) {
             System.err.println("Error fetching current user: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.status(401).build();
         }
     }

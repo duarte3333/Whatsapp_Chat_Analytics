@@ -60,8 +60,8 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
         final String name = extractedName;
 
         try {
-            // Find or create user
-            User user = userRepository.findByEmail(email).orElseGet(() -> {
+            // Find or create user - use findFirstByEmail to handle duplicate emails
+            User user = userRepository.findFirstByEmail(email).orElseGet(() -> {
                 User newUser = new User();
                 newUser.setEmail(email);
                 newUser.setUsername(name != null ? name : email.split("@")[0]);

@@ -56,7 +56,6 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
             .requestMatchers(HttpMethod.POST, "/api/payments/webhook").permitAll()
             .requestMatchers(HttpMethod.GET, "/api/payments/webhook").permitAll()
             .requestMatchers(
-                "/auth/**",
                 "/auth/signup",
                 "/auth/login",
                 "/auth/verify",
@@ -74,6 +73,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/shared/**",
                 "/api/shared/**")
             .permitAll()
+            // /auth/user requires authentication - handled by anyRequest().authenticated()
             .anyRequest().authenticated())
         .oauth2Login(oauth2 -> oauth2
             .successHandler(oAuth2SuccessHandler)

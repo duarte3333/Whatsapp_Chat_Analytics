@@ -48,14 +48,14 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (isResendEndpoint(path)) {
             // Very strict rate limiting for resend verification code (prevent email spam)
             bucket = rateLimitConfig.createResendCodeBucket(key);
-        } else if (isAuthEndpoint(path)) {
-            // Strict rate limiting for authentication endpoints (but still allow them)
+        } else if (isStrictAuthEndpoint(path)) {
+            // Strict rate limiting for authentication endpoints that need protection (login, signup, verify, etc.)
             bucket = rateLimitConfig.createAuthBucket(key);
         } else if (isUploadEndpoint(path)) {
             // Very strict rate limiting for file uploads
             bucket = rateLimitConfig.createUploadBucket(key);
         } else if (isAuthenticated(request)) {
-            // Authenticated users get more lenient limits
+            // Authenticated users get more lenient limits (includes /auth/user)
             bucket = rateLimitConfig.resolveAuthenticatedBucket(key);
         } else {
             // Anonymous users get stricter limits
@@ -121,11 +121,21 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Check if endpoint is authentication-related
+     * Check if endpoint is a strict authentication endpoint that needs rate limiting
+     * (excludes read-only endpoints like /auth/user)
      */
-    private boolean isAuthEndpoint(String path) {
-        return path.startsWith("/api/auth/") || 
-               path.startsWith("/auth/") ||
+    private boolean isStrictAuthEndpoint(String path) {
+        // Only apply strict rate limiting to authentication action endpoints
+        return path.equals("/auth/login") || 
+               path.equals("/auth/signup") ||
+               path.equals("/auth/verify") ||
+               path.equals("/auth/forgot-password") ||
+               path.equals("/auth/reset-password") ||
+               path.startsWith("/api/auth/login") ||
+               path.startsWith("/api/auth/signup") ||
+               path.startsWith("/api/auth/verify") ||
+               path.startsWith("/api/auth/forgot-password") ||
+               path.startsWith("/api/auth/reset-password") ||
                path.startsWith("/oauth2/") ||
                path.startsWith("/login/");
     }
