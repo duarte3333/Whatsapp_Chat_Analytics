@@ -36,6 +36,21 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 app.json.ensure_ascii = False
 
+# Global error handler to ensure JSON responses (only for unhandled errors)
+@app.errorhandler(500)
+def handle_500_error(e):
+    """Handle 500 errors and return JSON."""
+    error_msg = str(e) if e else "Internal Server Error"
+    error_traceback = traceback.format_exc()
+    app.logger.error(f"500 error: {error_msg}")
+    app.logger.error(error_traceback)
+    
+    # Always return JSON, even for unhandled errors
+    return jsonify({
+        "error": error_msg,
+        "details": error_traceback if app.debug else "Check server logs for details"
+    }), 500
+
 # ============================================================
 # EPHEMERAL RAG CACHE (TTL = 10 minutes)
 # ============================================================
@@ -75,11 +90,13 @@ def create_rag_session(df, session_id=None):
     if 'datetime' in df.columns:
         df = df.sort_values('datetime')
     
-    # Format all messages
-    formatted_messages = []
-    for _, row in df.iterrows():
-        content = f"[{row.get('datetime', 'Unknown')}] {row['sender']}: {row.get(message_col, '')}"
-        formatted_messages.append(content)
+    # ========== OPTIMIZATION: Vectorized message formatting ==========
+    # Use vectorized string operations instead of iterrows()
+    formatted_messages = (
+        "[" + df['datetime'].astype(str) + "] " + 
+        df['sender'].astype(str) + ": " + 
+        df[message_col].fillna('').astype(str)
+    ).tolist()
     
     # Take the most recent messages that fit within token limit
     # Start from the end (most recent) and work backwards
@@ -346,6 +363,13 @@ def rag_status(session_id):
 def compute_chart_data(df):
     """Compute all aggregated data for frontend charts."""
     
+    # Helper function to convert NumPy types to Python native types
+    def to_python_int(value):
+        """Convert NumPy int64/int32 to Python int."""
+        if pd.isna(value):
+            return 0
+        return int(value)
+    
     # Ensure datetime column exists
     if 'datetime' not in df.columns and 'timestamp' in df.columns:
         df['datetime'] = pd.to_datetime(df['timestamp'], errors='coerce')
@@ -586,39 +610,42 @@ def compute_chart_data(df):
     
     message_col = 'message' if 'message' in df.columns else 'content'
     
+    # ========== OPTIMIZATION: Pre-compute helper columns once ==========
+    # This avoids calling functions repeatedly in loops
+    app.logger.info("Pre-computing helper columns...")
+    df['_is_media'] = df[message_col].apply(is_media_message)
+    df['_has_emoji'] = df[message_col].apply(has_emoji)
+    df['_is_audio'] = df[message_col].apply(is_audio_message)
+    df['_is_sticker'] = df[message_col].apply(is_sticker_message)
+    df['_is_morning'] = (df['hour'] >= 6) & (df['hour'] < 12)
+    df['_is_afternoon'] = (df['hour'] >= 12) & (df['hour'] < 18)
+    df['_is_night'] = (df['hour'] >= 18) | (df['hour'] < 6)
+    df['_is_weekend'] = df['day_of_week'] >= 5
+    
     # ========== 1. MESSAGES PER USER (for bar chart & pie chart) ==========
     sender_counts = df['sender'].value_counts()
     messages_per_user = []
     
+    # Use groupby for efficient aggregation instead of filtering in loops
     for name, total_count in sender_counts.items():
-        user_df = df[df['sender'] == name]
-        user_messages = user_df[message_col] if message_col in user_df.columns else pd.Series([])
+        # Convert NumPy types to Python native types
+        name = str(name)  # Ensure name is string
+        total_count = int(total_count)  # Convert numpy.int64 to Python int
         
-        # Calculate text and media counts
-        media_count = sum(1 for msg in user_messages if is_media_message(msg))
-        text_count = int(total_count) - media_count
+        user_mask = df['sender'] == name
+        user_df = df[user_mask]
         
-        # Calculate emoji count (messages containing at least one emoji)
-        emoji_count = sum(1 for msg in user_messages if has_emoji(msg))
-        
-        # Calculate audio count (audio/voice messages specifically)
-        audio_count = sum(1 for msg in user_messages if is_audio_message(msg))
-        
-        # Calculate sticker count (sticker messages specifically)
-        sticker_count = sum(1 for msg in user_messages if is_sticker_message(msg))
-        
-        # Calculate time-of-day counts
-        # Morning: 6:00 - 11:59
-        morning_count = len(user_df[(user_df['hour'] >= 6) & (user_df['hour'] < 12)])
-        
-        # Afternoon: 12:00 - 17:59
-        afternoon_count = len(user_df[(user_df['hour'] >= 12) & (user_df['hour'] < 18)])
-        
-        # Night: 18:00 - 5:59 (evening + late night)
-        night_count = len(user_df[(user_df['hour'] >= 18) | (user_df['hour'] < 6)])
-        
-        # Weekend count: Saturday (5) and Sunday (6)
-        weekend_count = len(user_df[user_df['day_of_week'] >= 5])
+        # Use pre-computed columns for fast counting
+        # Convert all NumPy types to Python native types for JSON serialization
+        media_count = int(user_df['_is_media'].sum())
+        text_count = total_count - media_count
+        emoji_count = int(user_df['_has_emoji'].sum())
+        audio_count = int(user_df['_is_audio'].sum())
+        sticker_count = int(user_df['_is_sticker'].sum())
+        morning_count = int(user_df['_is_morning'].sum())
+        afternoon_count = int(user_df['_is_afternoon'].sum())
+        night_count = int(user_df['_is_night'].sum())
+        weekend_count = int(user_df['_is_weekend'].sum())
         
         messages_per_user.append({
             "user": str(name),
@@ -637,13 +664,14 @@ def compute_chart_data(df):
     # ========== 2. WEEKLY VOLUME (for line chart) ==========
     weekly = df.groupby('week_start').size().reset_index(name='count')
     weekly = weekly.sort_values('week_start')
+    # Optimized: use list comprehension without iterrows()
     weekly_volume = [
         {
-            "week": row['week_start'].strftime("%b '%y"),  # e.g., "Jan '24"
-            "weekStart": row['week_start'].strftime('%b %d, %Y'),
-            "count": int(row['count'])
+            "week": week_start.strftime("%b '%y"),  # e.g., "Jan '24"
+            "weekStart": week_start.strftime('%b %d, %Y'),
+            "count": to_python_int(count)
         }
-        for i, (_, row) in enumerate(weekly.iterrows())
+        for week_start, count in zip(weekly['week_start'], weekly['count'])
     ]
     
     # ========== 3. HEATMAP DATA (7 days x 24 hours) ==========
@@ -652,7 +680,7 @@ def compute_chart_data(df):
     for day in range(7):
         for hour in range(24):
             match = heatmap[(heatmap['day_of_week'] == day) & (heatmap['hour'] == hour)]
-            count = int(match['count'].sum()) if not match.empty else 0
+            count = to_python_int(match['count'].sum()) if not match.empty else 0
             heatmap_data.append({"day": day, "hour": hour, "count": count})
     
     # ========== 4. MESSAGE TYPE BREAKDOWN (for radar chart) ==========
@@ -663,22 +691,24 @@ def compute_chart_data(df):
         # Use emoji_list() to properly count emojis with modifiers as single units
         return len(emoji_lib.emoji_list(str(text)))
     
+    # ========== OPTIMIZATION: Use pre-computed columns and vectorized operations ==========
     message_type_breakdown = []
     
     for user in sender_counts.head(10).index:  # Top 10 users
-        user_df = df[df['sender'] == user]
-        user_messages = user_df[message_col] if message_col in user_df.columns else pd.Series([])
+        user_mask = df['sender'] == user
+        user_df = df[user_mask]
         
         total = len(user_df)
-        media_count = sum(1 for msg in user_messages if is_media_message(msg))
-        emoji_count = sum(count_emojis(msg) for msg in user_messages)
+        media_count = int(user_df['_is_media'].sum())
+        # Count emojis using vectorized operation
+        emoji_count = int(user_df[message_col].apply(count_emojis).sum())
         text_count = total - media_count
         
         message_type_breakdown.append({
             "user": str(user),
             "text": int(text_count),
-            "media": int(media_count),
-            "emojis": int(emoji_count),
+            "media": media_count,
+            "emojis": emoji_count,
             "all": int(total)
         })
     
@@ -702,29 +732,30 @@ def compute_chart_data(df):
         
         return emojis
     
-    # Count all emojis in the chat
-    all_emojis = []
-    for msg in df[message_col]:
-        all_emojis.extend(extract_emojis(msg))
+    # ========== OPTIMIZATION: Vectorized emoji extraction ==========
+    app.logger.info("Extracting emojis (vectorized)...")
+    # Extract all emojis at once using apply (much faster than loops)
+    all_emoji_lists = df[message_col].apply(extract_emojis)
+    # Flatten list of lists
+    all_emojis = [emoji for emoji_list in all_emoji_lists for emoji in emoji_list]
     
     # Get top 5 emojis overall
     emoji_counter = Counter(all_emojis)
     top_emojis_overall = [
-        {"emoji": emoji, "count": count}
+        {"emoji": emoji, "count": to_python_int(count)}
         for emoji, count in emoji_counter.most_common(5)
     ]
     
-    # Get top 5 emojis per user
+    # Get top 5 emojis per user (optimized with groupby)
     top_emojis_per_user = []
     for user in sender_counts.index:  # All users
-        user_messages = df[df['sender'] == user][message_col]
-        user_emojis = []
-        for msg in user_messages:
-            user_emojis.extend(extract_emojis(msg))
+        user_mask = df['sender'] == user
+        user_emoji_lists = df.loc[user_mask, message_col].apply(extract_emojis)
+        user_emojis = [emoji for emoji_list in user_emoji_lists for emoji in emoji_list]
         
         user_emoji_counter = Counter(user_emojis)
         top_5 = [
-            {"emoji": emoji, "count": count}
+            {"emoji": emoji, "count": to_python_int(count)}
             for emoji, count in user_emoji_counter.most_common(5)
         ]
         
@@ -777,25 +808,18 @@ def compute_chart_data(df):
             "endDate": best_end.strftime('%b %d, %Y') if longest_streak > 0 else None
         }
     
-    # Get dates where emojis were used (overall)
-    emoji_dates = []
-    for _, row in df.iterrows():
-        msg = row.get(message_col, '')
-        if not pd.isna(msg) and len(extract_emojis(msg)) > 0:
-            emoji_dates.append(row['datetime'])
+    # ========== OPTIMIZATION: Use pre-computed _has_emoji column ==========
+    # Get dates where emojis were used (overall) - use vectorized operation
+    emoji_dates = df.loc[df['_has_emoji'], 'datetime'].tolist()
     
     # Overall longest emoji streak
     overall_streak = calculate_longest_streak(emoji_dates)
     
-    # Longest emoji streak per user
+    # Longest emoji streak per user (optimized)
     longest_streak_per_user = []
     for user in sender_counts.index:
-        user_df = df[df['sender'] == user]
-        user_emoji_dates = []
-        for _, row in user_df.iterrows():
-            msg = row.get(message_col, '')
-            if not pd.isna(msg) and len(extract_emojis(msg)) > 0:
-                user_emoji_dates.append(row['datetime'])
+        user_mask = (df['sender'] == user) & df['_has_emoji']
+        user_emoji_dates = df.loc[user_mask, 'datetime'].tolist()
         
         user_streak = calculate_longest_streak(user_emoji_dates)
         longest_streak_per_user.append({
@@ -811,7 +835,7 @@ def compute_chart_data(df):
     
     daily_counts = df['day_name'].value_counts()
     daily_messages = [
-        {"day": day_short[i], "messages": int(daily_counts.get(day, 0))}
+        {"day": day_short[i], "messages": to_python_int(daily_counts.get(day, 0))}
         for i, day in enumerate(day_order)
     ]
     
@@ -824,10 +848,10 @@ def compute_chart_data(df):
     
     # ========== LEGACY: Hourly distribution ==========
     hourly_data = [
-        {"hour": "0-6", "count": int(df[(df['hour'] >= 0) & (df['hour'] < 6)].shape[0])},
-        {"hour": "6-12", "count": int(df[(df['hour'] >= 6) & (df['hour'] < 12)].shape[0])},
-        {"hour": "12-18", "count": int(df[(df['hour'] >= 12) & (df['hour'] < 18)].shape[0])},
-        {"hour": "18-24", "count": int(df[(df['hour'] >= 18) & (df['hour'] < 24)].shape[0])},
+        {"hour": "0-6", "count": to_python_int(df[(df['hour'] >= 0) & (df['hour'] < 6)].shape[0])},
+        {"hour": "6-12", "count": to_python_int(df[(df['hour'] >= 6) & (df['hour'] < 12)].shape[0])},
+        {"hour": "12-18", "count": to_python_int(df[(df['hour'] >= 12) & (df['hour'] < 18)].shape[0])},
+        {"hour": "18-24", "count": to_python_int(df[(df['hour'] >= 18) & (df['hour'] < 24)].shape[0])},
     ]
     
     # Peak hour
@@ -848,17 +872,22 @@ def compute_chart_data(df):
     for i, (name, count) in enumerate(sender_counts.head(4).items()):
         participant_data.append({
             "name": str(name),
-            "value": int(count),
+            "value": to_python_int(count),
             "color": colors[i]
         })
     
-    others_count = int(sender_counts.iloc[4:].sum()) if len(sender_counts) > 4 else 0
+    others_count = to_python_int(sender_counts.iloc[4:].sum()) if len(sender_counts) > 4 else 0
     if others_count > 0:
         participant_data.append({
             "name": "Others",
             "value": others_count,
             "color": colors[4]
         })
+    
+    # ========== Cleanup: Remove temporary helper columns ==========
+    df.drop(columns=['_is_media', '_has_emoji', '_is_audio', '_is_sticker', 
+                     '_is_morning', '_is_afternoon', '_is_night', '_is_weekend'], 
+            errors='ignore', inplace=True)
     
     return {
         # New chart data
@@ -895,18 +924,24 @@ def analyze_zip():
         - session_id for RAG queries (if enable_rag=true)
         - expires_in_seconds: TTL for RAG session
     """
-    file = request.files.get("file")
-    if file is None:
-        return jsonify({"error": "No file provided"}), 400
-    
-    filename = file.filename.lower()
-    if not (filename.endswith(".zip") or filename.endswith(".txt")):
-        return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
-
-    # Check if RAG should be enabled (default: false for speed)
-    enable_rag = request.args.get("enable_rag", "false").lower() == "true"
-
     try:
+        app.logger.info("=== /analyze endpoint called ===")
+        
+        file = request.files.get("file")
+        if file is None:
+            app.logger.warning("No file provided in request")
+            return jsonify({"error": "No file provided"}), 400
+        
+        filename = file.filename.lower() if file.filename else ""
+        app.logger.info(f"Processing file: {filename}, size: {file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+        
+        if not (filename.endswith(".zip") or filename.endswith(".txt")):
+            app.logger.warning(f"Invalid file type: {filename}")
+            return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
+
+        # Check if RAG should be enabled (default: false for speed)
+        enable_rag = request.args.get("enable_rag", "false").lower() == "true"
+        app.logger.info(f"RAG enabled: {enable_rag}")
         with tempfile.TemporaryDirectory() as tmpdir:
             chat_file_path = None
             
@@ -952,13 +987,13 @@ def analyze_zip():
                 return jsonify({"error": "No messages found in chat file"}), 400
 
             # Compute basic statistics
-            total_messages = len(df)
+            total_messages = int(len(df))  # Ensure Python int
             participants = df['sender'].unique()
-            participants_count = len(participants)
+            participants_count = int(len(participants))  # Ensure Python int
             
             # Find top user (user with most messages)
             sender_counts = df['sender'].value_counts()
-            top_user = sender_counts.index[0] if not df.empty else "Unknown"
+            top_user = str(sender_counts.index[0]) if not df.empty else "Unknown"
             
             # Get group name from parser
             group_title = parser.group_name if parser.group_name else "WhatsApp Chat"
@@ -974,7 +1009,30 @@ def analyze_zip():
                         emoji_usage[emoji] = count
 
             # Compute chart data
-            chart_data = compute_chart_data(df)
+            try:
+                app.logger.info("Computing chart data...")
+                chart_data = compute_chart_data(df)
+                app.logger.info("Chart data computed successfully")
+            except Exception as chart_error:
+                app.logger.error(f"Error computing chart data: {chart_error}")
+                app.logger.error(traceback.format_exc())
+                # Return empty/default chart data instead of failing
+                chart_data = {
+                    "messagesPerUser": [],
+                    "weeklyVolume": [],
+                    "heatmapData": [],
+                    "messageTypeBreakdown": [],
+                    "dateRange": {},
+                    "topEmojisOverall": [],
+                    "topEmojisPerUser": [],
+                    "longestStreak": {},
+                    "longestStreakPerUser": [],
+                    "dailyMessages": [],
+                    "hourlyData": [],
+                    "participantData": [],
+                    "mostActiveDay": "Unknown",
+                    "peakHour": "Unknown"
+                }
 
             # ========== CREATE RAG SESSION ==========
             session_id = None
@@ -989,18 +1047,19 @@ def analyze_zip():
                     pass
 
             # Build response with all data for frontend
+            # Ensure all values are Python native types for JSON serialization
             stats = {
                 # ========== BASIC STATS ==========
-                "total_messages": total_messages,
-                "messageCount": total_messages,
-                "participants_count": participants_count,
-                "top_user": top_user,
-                "title": group_title,
-                "emojiUsage": emoji_usage,
+                "total_messages": int(total_messages),
+                "messageCount": int(total_messages),
+                "participants_count": int(participants_count),
+                "top_user": str(top_user),
+                "title": str(group_title),
+                "emojiUsage": {k: int(v) for k, v in emoji_usage.items()},  # Convert counts to int
                 
                 # ========== RAG SESSION ==========
                 "session_id": session_id,
-                "expires_in_seconds": expires_in_seconds,
+                "expires_in_seconds": int(expires_in_seconds) if expires_in_seconds is not None else None,
                 
                 # ========== NEW CHART DATA ==========
                 "messagesPerUser": chart_data["messagesPerUser"],
@@ -1029,9 +1088,19 @@ def analyze_zip():
             
     except Exception as e:
         error_msg = f"Error processing file: {str(e)}"
+        error_traceback = traceback.format_exc()
         app.logger.error(error_msg)
-        app.logger.error(traceback.format_exc())
-        return jsonify({"error": error_msg}), 500
+        app.logger.error(error_traceback)
+        # Always return JSON, even on error
+        try:
+            return jsonify({
+                "error": error_msg,
+                "details": error_traceback if app.debug else "Check server logs for details"
+            }), 500
+        except Exception as json_error:
+            # Fallback if jsonify fails
+            app.logger.error(f"Failed to return JSON error: {json_error}")
+            return jsonify({"error": "Internal server error occurred"}), 500
 
 
 if __name__ == "__main__":
