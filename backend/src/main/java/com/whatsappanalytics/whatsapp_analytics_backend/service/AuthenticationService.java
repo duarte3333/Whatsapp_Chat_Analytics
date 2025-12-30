@@ -32,41 +32,88 @@ public class AuthenticationService {
     }
 
     public User signup(RegisterUserDto input) {
+        // Check if user already exists (use findFirstByEmail to handle duplicates)
+        Optional<User> existingUser = userRepository.findFirstByEmail(input.getEmail());
+        
+        if (existingUser.isPresent()) {
+            User user = existingUser.get();
+            
+            // If user is already enabled (verified), throw error
+            if (user.isEnabled()) {
+                throw new RuntimeException("User with this email already exists. Please sign in.");
+            }
+            
+            // If user exists but is not verified, resend verification code
+            user.setVerificationCode(generateVerificationCode());
+            user.setVerificationCodeExpiresAt(LocalDateTime.now().plusMinutes(15));
+            sendVerificationEmail(user);
+            return userRepository.save(user);
+        }
+        
+        // Create new user
         User user = new User(input.getUsername(), input.getEmail(),
                 passwordEncoder.encode(input.getPassword()));
         user.setVerificationCode(generateVerificationCode());
-        user.setVerificationCodeExpiresAt( LocalDateTime.now().plusMinutes(15));
+        user.setVerificationCodeExpiresAt(LocalDateTime.now().plusMinutes(15));
         user.setEnabled(false);
+        user.setRemainingCredits(3); // Default credits for new users
+        user.setHasLifetimeAccess(false);
         sendVerificationEmail(user);
 
         return userRepository.save(user);
     }
 
     public User authenticate(LoginUserDto input) {
-        User user = userRepository.findByEmail(input.getEmail())
+        // Use findFirstByEmail to handle duplicate emails
+        User user = userRepository.findFirstByEmail(input.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        // Check if user is OAuth user (empty password)
+        if (user.getPassword() == null || user.getPassword().isEmpty()) {
+            throw new RuntimeException("This account was created with Google/Microsoft. Please sign in with OAuth.");
+        }
+        
         if (!user.isEnabled()) {
             throw new RuntimeException("User not verified. Please verify your email.");
         }
+        
         authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(input.getEmail(), input.getPassword()));
         return user;
     }
 
     public User verifyUser(VerifyUserDto input) {
-        Optional<User> optionalUser = userRepository.findByEmail(input.getEmail());
+        // Use findFirstByEmail to handle cases where multiple users have the same email
+        Optional<User> optionalUser = userRepository.findFirstByEmail(input.getEmail());
         if (optionalUser.isPresent()) {
             User user = optionalUser.get();
-            if (user.getVerificationCodeExpiresAt().isBefore(LocalDateTime.now())) {
-                throw new RuntimeException("Verification code expired.");
+            
+            // Check if user is already verified
+            if (user.isEnabled()) {
+                throw new RuntimeException("User already verified.");
             }
-            if (user.getVerificationCode().equals(input.getVerificationCode())) {
+            
+            // Check if verification code exists
+            if (user.getVerificationCode() == null) {
+                throw new RuntimeException("No verification code found. Please request a new code.");
+            }
+            
+            // Check if verification code has expired
+            if (user.getVerificationCodeExpiresAt() == null || 
+                user.getVerificationCodeExpiresAt().isBefore(LocalDateTime.now())) {
+                throw new RuntimeException("Verification code expired. Please request a new code.");
+            }
+            
+            // Compare verification codes (trim whitespace)
+            String storedCode = user.getVerificationCode().trim();
+            String providedCode = input.getVerificationCode() != null ? input.getVerificationCode().trim() : "";
+            
+            if (storedCode.equals(providedCode)) {
                 user.setEnabled(true);
                 user.setVerificationCode(null);
                 user.setVerificationCodeExpiresAt(null);
                 User verifiedUser = userRepository.save(user);
                 return verifiedUser; // Return verified user for automatic login
-            }
-            else {
+            } else {
                 throw new RuntimeException("Invalid verification code.");
             }
         } else {

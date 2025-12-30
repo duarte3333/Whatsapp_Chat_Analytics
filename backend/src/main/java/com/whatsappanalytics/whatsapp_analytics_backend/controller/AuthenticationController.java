@@ -59,6 +59,19 @@ public class AuthenticationController {
     @PostMapping("/verify")
     public ResponseEntity<?> verifyUser(@RequestBody VerifyUserDto verifyUserDto) {
         try {
+            // Validate input
+            if (verifyUserDto == null) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Request body is required"));
+            }
+            
+            if (verifyUserDto.getEmail() == null || verifyUserDto.getEmail().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Email is required"));
+            }
+            
+            if (verifyUserDto.getVerificationCode() == null || verifyUserDto.getVerificationCode().trim().isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Verification code is required"));
+            }
+            
             // Verify user email
             User verifiedUser = authenticationService.verifyUser(verifyUserDto);
             
@@ -70,6 +83,8 @@ public class AuthenticationController {
             return ResponseEntity.ok(loginResponse);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "An error occurred during verification: " + e.getMessage()));
         }
     }
 

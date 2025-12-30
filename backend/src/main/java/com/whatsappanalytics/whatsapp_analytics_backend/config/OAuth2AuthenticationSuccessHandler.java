@@ -1,7 +1,6 @@
 package com.whatsappanalytics.whatsapp_analytics_backend.config;
 
 import java.io.IOException;
-import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -61,13 +60,29 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
 
         try {
             // Find or create user - use findFirstByEmail to handle duplicate emails
-            User user = userRepository.findFirstByEmail(email).orElseGet(() -> {
+            User user = userRepository.findFirstByEmail(email).map(existingUser -> {
+                // User exists - update if needed
+                // If user was created manually but not verified, enable them now (OAuth verified)
+                if (!existingUser.isEnabled()) {
+                    existingUser.setEnabled(true);
+                    existingUser.setVerificationCode(null);
+                    existingUser.setVerificationCodeExpiresAt(null);
+                }
+                // Update username if it's different (in case user changed name in OAuth provider)
+                if (name != null && !name.isEmpty() && !name.equals(existingUser.getDisplayName())) {
+                    existingUser.setUsername(name);
+                }
+                return userRepository.save(existingUser);
+            }).orElseGet(() -> {
+                // Create new OAuth user
                 User newUser = new User();
                 newUser.setEmail(email);
-                newUser.setUsername(name != null ? name : email.split("@")[0]);
+                newUser.setUsername(name != null && !name.isEmpty() ? name : email.split("@")[0]);
                 newUser.setPassword(""); // OAuth users don't have passwords
-                newUser.setEnabled(true);
-                newUser.setGroupIds(List.of()); // Empty list initially
+                newUser.setEnabled(true); // OAuth users are automatically verified
+                newUser.setGroupIds(new java.util.ArrayList<>()); // Empty list initially
+                newUser.setRemainingCredits(3); // Default credits for new users
+                newUser.setHasLifetimeAccess(false);
                 return userRepository.save(newUser);
             });
 

@@ -61,6 +61,7 @@ class AuthenticationServiceTest {
 
     @Test
     void signup_shouldCreateUserAndSendEmail() throws MessagingException {
+        when(userRepository.findFirstByEmail(registerDto.getEmail())).thenReturn(Optional.empty());
         when(passwordEncoder.encode(registerDto.getPassword())).thenReturn("encodedPass");
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -82,7 +83,7 @@ class AuthenticationServiceTest {
 
     @Test
     void authenticate_shouldThrowIfUserNotFound() {
-        when(userRepository.findByEmail(loginDto.getEmail())).thenReturn(Optional.empty());
+        when(userRepository.findFirstByEmail(loginDto.getEmail())).thenReturn(Optional.empty());
 
         RuntimeException exception = assertThrows(RuntimeException.class, () ->
                 authService.authenticate(loginDto));
@@ -93,7 +94,8 @@ class AuthenticationServiceTest {
     @Test
     void authenticate_shouldThrowIfUserNotVerified() {
         testUser.setEnabled(false);
-        when(userRepository.findByEmail(loginDto.getEmail())).thenReturn(Optional.of(testUser));
+        testUser.setPassword("encodedPass"); // Set password to avoid OAuth check
+        when(userRepository.findFirstByEmail(loginDto.getEmail())).thenReturn(Optional.of(testUser));
 
         RuntimeException exception = assertThrows(RuntimeException.class, () ->
                 authService.authenticate(loginDto));
@@ -103,7 +105,10 @@ class AuthenticationServiceTest {
 
     @Test
     void authenticate_shouldReturnUserIfVerified() {
-        when(userRepository.findByEmail(loginDto.getEmail())).thenReturn(Optional.of(testUser));
+        testUser.setPassword("encodedPass"); // Set password to avoid OAuth check
+        when(userRepository.findFirstByEmail(loginDto.getEmail())).thenReturn(Optional.of(testUser));
+        when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
+                .thenReturn(null);
 
         User result = authService.authenticate(loginDto);
 
@@ -121,13 +126,60 @@ class AuthenticationServiceTest {
         verifyDto.setEmail(testUser.getEmail());
         verifyDto.setVerificationCode("123456");
 
-        when(userRepository.findByEmail(testUser.getEmail())).thenReturn(Optional.of(testUser));
+        when(userRepository.findFirstByEmail(testUser.getEmail())).thenReturn(Optional.of(testUser));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        authService.verifyUser(verifyDto);
+        User result = authService.verifyUser(verifyDto);
 
-        assertTrue(testUser.isEnabled());
-        assertNull(testUser.getVerificationCode());
-        assertNull(testUser.getVerificationCodeExpiresAt());
+        assertTrue(result.isEnabled());
+        assertNull(result.getVerificationCode());
+        assertNull(result.getVerificationCodeExpiresAt());
+        verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    void authenticate_shouldThrowIfOAuthUser() {
+        testUser.setPassword(""); // OAuth user has empty password
+        when(userRepository.findFirstByEmail(loginDto.getEmail())).thenReturn(Optional.of(testUser));
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () ->
+                authService.authenticate(loginDto));
+
+        assertEquals("This account was created with Google/Microsoft. Please sign in with OAuth.", exception.getMessage());
+    }
+
+    @Test
+    void signup_shouldResendCodeIfUserExistsButNotVerified() throws MessagingException {
+        User existingUser = new User("john", "john@example.com", "encodedPass");
+        existingUser.setEnabled(false);
+        existingUser.setVerificationCode("oldCode");
+        existingUser.setVerificationCodeExpiresAt(LocalDateTime.now().minusMinutes(10)); // Expired
+        
+        when(userRepository.findFirstByEmail(registerDto.getEmail())).thenReturn(Optional.of(existingUser));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User user = authService.signup(registerDto);
+
+        assertNotNull(user.getVerificationCode());
+        assertNotEquals("oldCode", user.getVerificationCode()); // New code generated
+        assertFalse(user.isEnabled());
+        verify(emailService).sendVerificationEmail(
+                eq(user.getEmail()),
+                anyString(),
+                anyString()
+        );
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void signup_shouldThrowIfUserAlreadyVerified() {
+        testUser.setEnabled(true);
+        when(userRepository.findFirstByEmail(registerDto.getEmail())).thenReturn(Optional.of(testUser));
+
+        RuntimeException exception = assertThrows(RuntimeException.class, () ->
+                authService.signup(registerDto));
+
+        assertEquals("User with this email already exists. Please sign in.", exception.getMessage());
+        verify(userRepository, never()).save(any(User.class));
     }
 }
