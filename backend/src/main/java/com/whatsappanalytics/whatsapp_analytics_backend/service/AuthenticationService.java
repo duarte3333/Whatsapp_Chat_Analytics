@@ -75,7 +75,8 @@ public class AuthenticationService {
     }
 
 public void resendVerificationCode(String email) {
-        Optional<User> optionalUser = userRepository.findByEmail(email);
+        // Use findFirstByEmail to handle cases where multiple users have the same email
+        Optional<User> optionalUser = userRepository.findFirstByEmail(email);
         if (optionalUser.isPresent()) {
             User user = optionalUser.get();
             if (user.isEnabled()) {
@@ -91,74 +92,122 @@ public void resendVerificationCode(String email) {
     }
 
     public void sendVerificationEmail(User user) {
-        String subject = "Welcome to ChatLytics - Email Verification Required";
+        String subject = "Thank you for joining Chatlytics";
         String verificationCode = user.getVerificationCode();
-        String htmlMessage = "<html>"
+        String htmlMessage = "<!DOCTYPE html>"
+            + "<html lang=\"en\">"
             + "<head>"
             + "<meta charset=\"UTF-8\">"
             + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
+            + "<style>"
+            + "@media only screen and (max-width: 600px) { .container { width: 100% !important; padding: 20px !important; } }"
+            + "</style>"
             + "</head>"
-            + "<body style=\"margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc;\">"
-            + "<div style=\"max-width: 600px; margin: 0 auto; background-color: #ffffff;\">"
+            + "<body style=\"margin: 0; padding: 0; background-color: #fafafa; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;\">"
             
-            // Header
-            + "<div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; text-align: center;\">"
-            + "<h1 style=\"color: #ffffff; margin: 0; font-size: 28px; font-weight: 600;\">ChatLytics</h1>"
-            + "<p style=\"color: #e2e8f0; margin: 8px 0 0 0; font-size: 16px;\">Unlock Your WhatsApp Insights</p>"
+            // Outer container with subtle gradient
+            + "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background: linear-gradient(180deg, #fafafa 0%, #f5f5f7 100%); padding: 80px 20px; min-height: 100vh;\">"
+            + "<tr>"
+            + "<td align=\"center\" valign=\"top\">"
+            
+            // Main email container - Apple style card
+            + "<table width=\"600\" cellpadding=\"0\" cellspacing=\"0\" class=\"container\" style=\"background-color: #ffffff; border-radius: 20px; overflow: hidden; box-shadow: 0 2px 16px rgba(0, 0, 0, 0.08); max-width: 600px; margin: 0 auto;\">"
+            
+            // Spacer top
+            + "<tr>"
+            + "<td style=\"padding: 64px 48px 0 48px; background-color: #ffffff;\">"
+            + "</td>"
+            + "</tr>"
+            
+            // Logo/Brand area - Minimal
+            + "<tr>"
+            + "<td style=\"padding: 0 48px 32px 48px; background-color: #ffffff; text-align: left;\">"
+            + "<div style=\"display: inline-block; padding: 8px 16px; background-color: #f0fdf4; border-radius: 12px;\">"
+            + "<span style=\"color: #10b981; font-size: 20px; font-weight: 600; letter-spacing: -0.3px;\">Chatlytics</span>"
             + "</div>"
+            + "</td>"
+            + "</tr>"
             
-            // Main Content
-            + "<div style=\"padding: 40px 30px;\">"
-            + "<h2 style=\"color: #1a202c; margin: 0 0 20px 0; font-size: 24px; font-weight: 600;\">Welcome to ChatLytics!</h2>"
-            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 25px 0;\">"
-            + "Thank you for joining ChatLytics, the premier platform for analyzing your WhatsApp conversations. "
-            + "We're excited to help you discover valuable insights from your chat data."
+            // Main content
+            + "<tr>"
+            + "<td style=\"padding: 0 48px 48px 48px; background-color: #ffffff;\">"
+            
+            // Welcome message - Apple style typography
+            + "<h1 style=\"color: #1d1d1f; margin: 0 0 16px 0; font-size: 32px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.2;\">"
+            + "Welcome to Chatlytics"
+            + "</h1>"
+            
+            + "<p style=\"color: #86868b; font-size: 17px; line-height: 1.47059; margin: 0 0 48px 0; font-weight: 400;\">"
+            + "We're excited to have you on board. To get started, please verify your email address using the verification code below."
             + "</p>"
             
-            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;\">"
-            + "To get started and secure your account, please verify your email address using the code below:"
-            + "</p>"
+            // Verification code container - Apple style
+            + "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin: 0 0 32px 0;\">"
+            + "<tr>"
+            + "<td align=\"center\" style=\"padding: 48px 32px; background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%); border-radius: 18px; border: 1px solid #d1fae5;\">"
             
-            // Verification Code Box
-            + "<div style=\"background-color: #f7fafc; border: 2px dashed #cbd5e0; padding: 30px; text-align: center; border-radius: 12px; margin: 30px 0;\">"
-            + "<h3 style=\"color: #2d3748; margin: 0 0 15px 0; font-size: 18px; font-weight: 600;\">Your Verification Code</h3>"
-            + "<div style=\"background-color: #667eea; color: #ffffff; padding: 15px 25px; border-radius: 8px; display: inline-block; font-size: 24px; font-weight: 700; letter-spacing: 2px; font-family: 'Courier New', monospace;\">"
+            + "<p style=\"color: #6b7280; margin: 0 0 24px 0; font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px;\">Verification Code</p>"
+            
+            + "<div style=\"background-color: #10b981; color: #ffffff; padding: 24px 48px; border-radius: 14px; display: inline-block; font-size: 36px; font-weight: 600; letter-spacing: 6px; font-family: 'SF Mono', 'Monaco', 'Menlo', 'Courier New', monospace; margin: 0 0 20px 0; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);\">"
             + verificationCode
             + "</div>"
-            + "<p style=\"color: #718096; font-size: 14px; margin: 15px 0 0 0;\">Enter this code in the verification form</p>"
-            + "</div>"
             
-            + "<div style=\"background-color: #fff5f5; border-left: 4px solid #f56565; padding: 20px; margin: 25px 0; border-radius: 0 8px 8px 0;\">"
-            + "<p style=\"color: #c53030; font-size: 14px; margin: 0; font-weight: 500;\">⚠️ Important: This code expires in 15 minutes</p>"
-            + "</div>"
+            + "<p style=\"color: #86868b; font-size: 15px; margin: 0; line-height: 1.5; font-weight: 400;\">Enter this code in the verification form</p>"
             
-            + "<p style=\"color: #4a5568; font-size: 16px; line-height: 1.6; margin: 25px 0 0 0;\">"
-            + "Once verified, you'll be able to:"
-            + "</p>"
-            + "<ul style=\"color: #4a5568; font-size: 16px; line-height: 1.8; padding-left: 20px;\">"
-            + "<li>Upload and analyze your WhatsApp chat exports</li>"
-            + "<li>Generate detailed conversation insights and statistics</li>"
-            + "<li>Use our AI-powered chat analysis features</li>"
-            + "<li>Access premium analytics tools</li>"
-            + "</ul>"
-            + "</div>"
+            + "</td>"
+            + "</tr>"
+            + "</table>"
             
-            // Footer
-            + "<div style=\"background-color: #f7fafc; padding: 30px; text-align: center; border-top: 1px solid #e2e8f0;\">"
-            + "<p style=\"color: #718096; font-size: 14px; margin: 0 0 10px 0;\">"
-            + "Need help? Contact our support team at <a href=\"mailto:chatlyticshelp@gmail.com\" style=\"color: #667eea; text-decoration: none;\">chatlyticshelp@gmail.com</a>"
-            + "</p>"
-            + "<p style=\"color: #a0aec0; font-size: 12px; margin: 0;\">"
-            + "If you didn't create an account with ChatLytics, please ignore this email."
-            + "</p>"
-            + "<div style=\"margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;\">"
-            + "<p style=\"color: #a0aec0; font-size: 12px; margin: 0;\">"
-            + "© 2025 ChatLytics. All rights reserved."
-            + "</p>"
-            + "</div>"
-            + "</div>"
+            // Expiration notice - Apple style subtle
+            + "<table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"margin: 0 0 48px 0;\">"
+            + "<tr>"
+            + "<td style=\"background-color: #fff7ed; border-left: 3px solid #f59e0b; padding: 16px 20px; border-radius: 0 10px 10px 0;\">"
+            + "<p style=\"color: #92400e; font-size: 14px; margin: 0; font-weight: 500; line-height: 1.5;\">This code expires in 15 minutes</p>"
+            + "</td>"
+            + "</tr>"
+            + "</table>"
             
-            + "</div>"
+            + "</td>"
+            + "</tr>"
+            
+            // Divider
+            + "<tr>"
+            + "<td style=\"padding: 0 48px; background-color: #ffffff;\">"
+            + "<div style=\"height: 1px; background-color: #f5f5f7; margin: 0;\"></div>"
+            + "</td>"
+            + "</tr>"
+            
+            // Footer - Apple style minimal
+            + "<tr>"
+            + "<td style=\"padding: 32px 48px 48px 48px; background-color: #ffffff; text-align: center;\">"
+            
+            + "<p style=\"color: #86868b; font-size: 15px; margin: 0 0 12px 0; line-height: 1.5; font-weight: 400;\">"
+            + "Need help? Contact us at <a href=\"mailto:chatlyticshelp@gmail.com\" style=\"color: #10b981; text-decoration: none; font-weight: 500;\">chatlyticshelp@gmail.com</a>"
+            + "</p>"
+            
+            + "<p style=\"color: #86868b; font-size: 13px; margin: 0 0 24px 0; line-height: 1.5; font-weight: 400;\">"
+            + "If you didn't create an account with Chatlytics, you can safely ignore this email."
+            + "</p>"
+            
+            + "<p style=\"color: #86868b; font-size: 12px; margin: 0; padding-top: 24px; border-top: 1px solid #f5f5f7; line-height: 1.5; font-weight: 400;\">"
+            + "© 2025 Chatlytics. All rights reserved."
+            + "</p>"
+            
+            + "</td>"
+            + "</tr>"
+            
+            // Spacer bottom
+            + "<tr>"
+            + "<td style=\"padding: 0 48px 48px 48px; background-color: #ffffff;\">"
+            + "</td>"
+            + "</tr>"
+            
+            + "</table>"
+            
+            + "</td>"
+            + "</tr>"
+            + "</table>"
+            
             + "</body>"
             + "</html>";
 

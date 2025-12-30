@@ -12,6 +12,7 @@ import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 public interface UserRepository extends CrudRepository<User, Long> {
     
     Optional<User> findByEmail(String email);
+    Optional<User> findFirstByEmail(String email); // Returns first result if multiple exist
     Optional<User> findByUsername(String username);
     Optional<User> findByVerificationCode(String verificationCode);
 }

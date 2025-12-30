@@ -1,5 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 import zipfile
 import tempfile
 import os
@@ -19,6 +21,14 @@ from threading import Lock
 from cachetools import TTLCache
 from collections import Counter
 import tiktoken
+
+# Import security validator
+from security_validator import (
+    validate_file_upload, 
+    safe_extract_zip, 
+    sanitize_text_input,
+    is_valid_filename
+)
 
 # Add stats_computation directory to Python path to import parser
 stats_computation_path = os.path.join(os.path.dirname(__file__), '..', 'stats_computation')
@@ -41,6 +51,14 @@ app.json.ensure_ascii = False
 # Configure Flask to always return JSON errors
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
 app.config['PROPAGATE_EXCEPTIONS'] = True  # Allow error handlers to work
+
+# Rate limiting configuration
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per hour", "30 per minute"],
+    storage_uri="memory://"  # In-memory storage (use Redis in production)
+)
 
 # Middleware to ensure JSON responses for all errors
 @app.after_request
@@ -230,14 +248,26 @@ def get_rag_session(session_id):
 # ============================================================
 
 @app.route("/rag/upload", methods=["POST"])
+@limiter.limit("3 per hour")  # Very strict for file uploads
 def rag_upload():
     """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
     file = request.files.get("file")
     if file is None:
         return jsonify({"error": "No file provided"}), 400
     
-    filename = file.filename.lower()
-    if not (filename.endswith(".zip") or filename.endswith(".txt")):
+    filename = file.filename
+    if not filename:
+        return jsonify({"error": "Invalid filename"}), 400
+    
+    # Security validation
+    file_size = file.content_length if hasattr(file, 'content_length') else 0
+    validation_error = validate_file_upload(filename, file_size)
+    if validation_error:
+        app.logger.warning(f"File validation failed: {validation_error}")
+        return jsonify({"error": validation_error}), 400
+    
+    filename_lower = filename.lower()
+    if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
         return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
 
     try:
@@ -245,24 +275,32 @@ def rag_upload():
             chat_file_path = None
             
             # Handle TXT files directly
-            if filename.endswith(".txt"):
-                txt_path = os.path.join(tmpdir, file.filename)
+            if filename_lower.endswith(".txt"):
+                # Sanitize filename before saving
+                safe_filename = is_valid_filename(filename) and filename or "chat.txt"
+                txt_path = os.path.join(tmpdir, safe_filename)
                 file.save(txt_path)
                 chat_file_path = txt_path
             else:
                 # Handle ZIP files (extract and find chat file)
-                zip_path = os.path.join(tmpdir, file.filename)
+                safe_filename = is_valid_filename(filename) and filename or "chat.zip"
+                zip_path = os.path.join(tmpdir, safe_filename)
                 file.save(zip_path)
                 
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(tmpdir)
-
-                # Find chat file
-                chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
-                if not chat_files:
-                    return jsonify({"error": "No chat file found in ZIP"}), 400
+                # Safe extraction with validation
+                error_msg, chat_file_path = safe_extract_zip(zip_path, tmpdir)
+                if error_msg:
+                    app.logger.warning(f"ZIP extraction failed: {error_msg}")
+                    return jsonify({"error": error_msg}), 400
                 
-                chat_file_path = chat_files[0]
+                if not chat_file_path:
+                    # Fallback: find chat file
+                    chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
+                    if not chat_files:
+                        chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                    if not chat_files:
+                        return jsonify({"error": "No chat file found in ZIP"}), 400
+                    chat_file_path = chat_files[0]
 
             # Parse chat
             parser = WhatsAppChatParser()
@@ -292,6 +330,7 @@ def rag_upload():
 
 
 @app.route("/rag/ask", methods=["POST"])
+# Uses default_limits: 30 per minute, 200 per hour
 def rag_ask():
     """Ask a question about an uploaded chat using the most recent messages."""
     data = request.get_json()
@@ -300,6 +339,13 @@ def rag_ask():
 
     if not session_id or not question:
         return jsonify({"error": "session_id and question are required"}), 400
+    
+    # Sanitize inputs to prevent injection
+    session_id = str(session_id).strip()[:100]  # Limit length
+    question = sanitize_text_input(str(question), max_length=5000)  # Limit and sanitize
+    
+    if not question:
+        return jsonify({"error": "Question cannot be empty"}), 400
 
     # Get RAG session
     session = get_rag_session(session_id)
@@ -1001,6 +1047,7 @@ def compute_chart_data(df):
 
 
 @app.route("/analyze", methods=["POST"])
+@limiter.limit("3 per hour")  # Very strict for file uploads
 def analyze_zip():
     """
     Upload a WhatsApp chat file (ZIP or TXT) and get metrics + RAG session.
@@ -1021,10 +1068,21 @@ def analyze_zip():
             app.logger.warning("No file provided in request")
             return jsonify({"error": "No file provided"}), 400
         
-        filename = file.filename.lower() if file.filename else ""
-        app.logger.info(f"Processing file: {filename}, size: {file.content_length if hasattr(file, 'content_length') else 'unknown'}")
+        filename = file.filename
+        if not filename:
+            return jsonify({"error": "Invalid filename"}), 400
         
-        if not (filename.endswith(".zip") or filename.endswith(".txt")):
+        # Security validation
+        file_size = file.content_length if hasattr(file, 'content_length') else 0
+        validation_error = validate_file_upload(filename, file_size)
+        if validation_error:
+            app.logger.warning(f"File validation failed: {validation_error}")
+            return jsonify({"error": validation_error}), 400
+        
+        filename_lower = filename.lower()
+        app.logger.info(f"Processing file: {filename}, size: {file_size}")
+        
+        if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
             app.logger.warning(f"Invalid file type: {filename}")
             return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
 
@@ -1035,32 +1093,33 @@ def analyze_zip():
             chat_file_path = None
             
             # Handle TXT files directly
-            if filename.endswith(".txt"):
-                # Save TXT file directly
-                txt_path = os.path.join(tmpdir, file.filename)
+            if filename_lower.endswith(".txt"):
+                # Sanitize filename before saving
+                safe_filename = is_valid_filename(filename) and filename or "chat.txt"
+                txt_path = os.path.join(tmpdir, safe_filename)
                 file.save(txt_path)
                 chat_file_path = txt_path
             else:
                 # Handle ZIP files (extract and find chat file)
-                zip_path = os.path.join(tmpdir, file.filename)
+                safe_filename = is_valid_filename(filename) and filename or "chat.zip"
+                zip_path = os.path.join(tmpdir, safe_filename)
                 file.save(zip_path)
 
-                # Extract ZIP file
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    zip_ref.extractall(tmpdir)
-
-                # Find the chat .txt file (WhatsApp exports are usually named _chat.txt)
-                chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
-                if not chat_files:
-                    # Try alternative patterns
-                    chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                # Safe extraction with validation
+                error_msg, chat_file_path = safe_extract_zip(zip_path, tmpdir)
+                if error_msg:
+                    app.logger.warning(f"ZIP extraction failed: {error_msg}")
+                    return jsonify({"error": error_msg}), 400
                 
-                if not chat_files:
-                    app.logger.error(f"No chat file found in ZIP. Contents: {os.listdir(tmpdir)}")
-                    return jsonify({"error": "No chat file found in ZIP"}), 400
-
-                # Use the first chat file found
-                chat_file_path = chat_files[0]
+                if not chat_file_path:
+                    # Fallback: find chat file
+                    chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
+                    if not chat_files:
+                        chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                    if not chat_files:
+                        app.logger.error(f"No chat file found in ZIP. Contents: {os.listdir(tmpdir)}")
+                        return jsonify({"error": "No chat file found in ZIP"}), 400
+                    chat_file_path = chat_files[0]
             
             # Parse the chat file using the existing parser
             try:

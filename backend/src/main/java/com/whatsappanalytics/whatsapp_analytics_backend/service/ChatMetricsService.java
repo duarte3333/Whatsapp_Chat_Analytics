@@ -470,8 +470,16 @@ public class ChatMetricsService {
                     new ParameterizedTypeReference<Map<String, Object>>() {
                     }
             ).getBody();
+        } catch (org.springframework.web.client.ResourceAccessException e) {
+            // Connection refused or service unavailable
+            if (e.getMessage() != null && e.getMessage().contains("Connection refused")) {
+                throw new RuntimeException("Python microservice is not running. Please start the service on port 5050.", e);
+            }
+            throw new RuntimeException("Failed to connect to Python service: " + e.getMessage(), e);
         } catch (IOException e) {
             throw new RuntimeException("Failed to send file to Python service", e);
+        } catch (Exception e) {
+            throw new RuntimeException("Error communicating with Python service: " + e.getMessage(), e);
         }
     }
 

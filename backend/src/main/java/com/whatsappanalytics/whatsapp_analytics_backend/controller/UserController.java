@@ -100,6 +100,12 @@ public class UserController {
             return ResponseEntity.badRequest().body(Map.of("error", "Group name is required"));
         }
         
+        // Sanitize group name to prevent injection
+        newName = com.whatsappanalytics.whatsapp_analytics_backend.util.SecurityValidator.sanitizeText(newName, 200);
+        if (newName.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Group name cannot be empty after sanitization"));
+        }
+        
         // Find the group
         GroupChat group = groupChatRepository.findById(groupId).orElse(null);
         
@@ -113,7 +119,7 @@ public class UserController {
         }
         
         // Update the group name
-        group.setTitle(newName.trim());
+        group.setTitle(newName);
         groupChatRepository.save(group);
         
         return ResponseEntity.ok(Map.of("message", "Group renamed successfully", "name", newName.trim()));

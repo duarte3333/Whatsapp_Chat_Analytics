@@ -1,10 +1,6 @@
 package com.whatsappanalytics.whatsapp_analytics_backend.controller;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,6 +14,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
 import com.whatsappanalytics.whatsapp_analytics_backend.service.ChatMetricsService;
+import com.whatsappanalytics.whatsapp_analytics_backend.util.SecurityValidator;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -33,66 +30,12 @@ public class ChatMetricsController {
     }
 
     /**
-     * Validate uploaded file (ZIP or TXT)
+     * Validate uploaded file (ZIP or TXT) using SecurityValidator
      * @param file The multipart file to validate
      * @return Error message if validation fails, null if valid
      */
     private String validateChatFile(MultipartFile file) {
-        // Check if file is empty
-        if (file.isEmpty()) {
-            return "File is empty";
-        }
-        
-        // Check file size (5MB = 5 * 1024 * 1024 bytes)
-        long maxSize = 5 * 1024 * 1024; // 5MB
-        long fileSize = file.getSize();
-        if (fileSize > maxSize) {
-            return "File size exceeds 5MB limit";
-        }
-        
-        String filename = file.getOriginalFilename();
-        if (filename == null) {
-            return "Invalid filename";
-        }
-        
-        String lowerFilename = filename.toLowerCase();
-        
-        // Accept .txt files directly
-        if (lowerFilename.endsWith(".txt")) {
-            return null; // TXT file is valid
-        }
-        
-        // For ZIP files, check if it contains _chat.txt file
-        if (lowerFilename.endsWith(".zip")) {
-            try (InputStream inputStream = file.getInputStream();
-                 ZipInputStream zipInputStream = new ZipInputStream(inputStream)) {
-                
-                ZipEntry entry;
-                boolean hasChatFile = false;
-                
-                while ((entry = zipInputStream.getNextEntry()) != null) {
-                    String entryName = entry.getName();
-                    // Check for _chat.txt file (case-insensitive)
-                    if (entryName.toLowerCase().endsWith("_chat.txt")) {
-                        hasChatFile = true;
-                        break;
-                    }
-                    zipInputStream.closeEntry();
-                }
-                
-                if (!hasChatFile) {
-                    return "The ZIP file does not contain a .txt file with the chat";
-                }
-                
-            } catch (IOException e) {
-                return "Error reading ZIP file: " + e.getMessage();
-            }
-            
-            return null; // ZIP validation passed
-        }
-        
-        // File type not supported
-        return "File must be a ZIP file or a TXT file";
+        return SecurityValidator.validateFile(file);
     }
 
     // Authenticated user uploads metrics

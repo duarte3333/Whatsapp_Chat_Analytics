@@ -46,6 +46,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         final String authHeader = request.getHeader("Authorization");
         final String requestPath = request.getRequestURI();
 
+        // Check if this is a public endpoint - if so, skip JWT validation
+        if (isPublicEndpoint(requestPath)) {
+            System.out.println("JWT Filter: Public endpoint detected: " + requestPath + ", skipping JWT validation");
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
+        System.out.println("JWT Filter: Protected endpoint: " + requestPath);
+
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             // Only log for non-OPTIONS requests to reduce noise
             if (!"OPTIONS".equals(request.getMethod())) {
@@ -87,8 +96,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         } catch (Exception ex) {
             System.err.println("JWT authentication failed: " + ex.getMessage());
             ex.printStackTrace();
-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "JWT authentication failed");
+            // Only return 401 if this is not a public endpoint
+            if (!isPublicEndpoint(requestPath)) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "JWT authentication failed");
+            } else {
+                filterChain.doFilter(request, response);
+            }
         }
+    }
+
+    /**
+     * Check if the request path is a public endpoint that doesn't require authentication
+     */
+    private boolean isPublicEndpoint(String path) {
+        return path.startsWith("/auth/") ||
+               path.startsWith("/oauth2/") ||
+               path.startsWith("/login/") ||
+               path.startsWith("/v3/api-docs/") ||
+               path.startsWith("/swagger-ui/") ||
+               path.equals("/swagger-ui.html") ||
+               path.startsWith("/api/payments/webhook") ||
+               path.startsWith("/payments/webhook") ||
+               path.startsWith("/metrics/chat/upload-anonymous") ||
+               path.startsWith("/shared/") ||
+               path.startsWith("/api/shared/");
     }
 }
     

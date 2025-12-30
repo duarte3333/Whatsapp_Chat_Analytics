@@ -11,6 +11,8 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import com.whatsappanalytics.whatsapp_analytics_backend.filter.RateLimitFilter;
+
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.springframework.http.HttpMethod;
@@ -24,16 +26,19 @@ public class SecurityConfiguration {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler;
     private final OAuth2AuthenticationFailureHandler oAuth2FailureHandler;
+    private final RateLimitFilter rateLimitFilter;
 
     public SecurityConfiguration(
             AuthenticationProvider authenticationProvider,
             JwtAuthenticationFilter jwtAuthenticationFilter,
             OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler,
-            OAuth2AuthenticationFailureHandler oAuth2FailureHandler) {
+            OAuth2AuthenticationFailureHandler oAuth2FailureHandler,
+            RateLimitFilter rateLimitFilter) {
         this.authenticationProvider = authenticationProvider;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.oAuth2SuccessHandler = oAuth2SuccessHandler;
         this.oAuth2FailureHandler = oAuth2FailureHandler;
+        this.rateLimitFilter = rateLimitFilter;
     }
 
     
@@ -52,6 +57,12 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
             .requestMatchers(HttpMethod.GET, "/api/payments/webhook").permitAll()
             .requestMatchers(
                 "/auth/**",
+                "/auth/signup",
+                "/auth/login",
+                "/auth/verify",
+                "/auth/resend",
+                "/auth/forgot-password",
+                "/auth/reset-password",
                 "/oauth2/**",
                 "/login/**",
                 "/v3/api-docs/**",
@@ -71,18 +82,35 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
         .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .exceptionHandling(exception -> exception
             .authenticationEntryPoint((request, response, authException) -> {
+                // Only return 401 for protected endpoints
+                // Public endpoints should not reach here if configured correctly
                 response.setContentType("application/json;charset=UTF-8");
                 response.setCharacterEncoding("UTF-8");
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.getWriter().write("{\"error\": \"Unauthorized\", \"message\": \"" + authException.getMessage() + "\"}");
             }))
         .authenticationProvider(authenticationProvider)
+        .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
         .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
     return http.build();
 }
 
-
-
+/**
+ * Check if the request path is a public endpoint that doesn't require authentication
+ */
+private boolean isPublicEndpoint(String path) {
+    return path.startsWith("/auth/") ||
+           path.startsWith("/oauth2/") ||
+           path.startsWith("/login/") ||
+           path.startsWith("/v3/api-docs/") ||
+           path.startsWith("/swagger-ui/") ||
+           path.equals("/swagger-ui.html") ||
+           path.startsWith("/api/payments/webhook") ||
+           path.startsWith("/payments/webhook") ||
+           path.startsWith("/metrics/chat/upload-anonymous") ||
+           path.startsWith("/shared/") ||
+           path.startsWith("/api/shared/");
+}
 
 }

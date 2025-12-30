@@ -2,6 +2,7 @@ package com.whatsappanalytics.whatsapp_analytics_backend.controller;
 
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 
@@ -12,9 +13,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.ForgotPasswordRequestDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.LoginUserDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.RegisterUserDto;
+import com.whatsappanalytics.whatsapp_analytics_backend.dto.ResendVerificationRequestDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.ResetPasswordRequestDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.dto.VerifyUserDto;
 import com.whatsappanalytics.whatsapp_analytics_backend.model.User;
@@ -28,6 +32,9 @@ public class AuthenticationController {
     private final JwtService jwtService;
 
     private final AuthenticationService authenticationService;
+    
+    @Autowired
+    private ObjectMapper objectMapper;
 
     public AuthenticationController(JwtService jwtService, AuthenticationService authenticationService) {
         this.jwtService = jwtService;
@@ -67,12 +74,67 @@ public class AuthenticationController {
     }
 
     @PostMapping("/resend")
-    public ResponseEntity<?> resendVerificationCode(@RequestBody String email) {
+    public ResponseEntity<?> resendVerificationCode(@RequestBody Object request) {
         try {
-            authenticationService.resendVerificationCode(email);
-            return ResponseEntity.ok("Verification code resent successfully.");
+            System.out.println("Resend request received. Type: " + (request != null ? request.getClass().getName() : "null"));
+            System.out.println("Resend request value: " + request);
+            
+            String email = null;
+            
+            // Handle both JSON object {"email": "..."} and plain string "email@example.com"
+            if (request instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> requestMap = (Map<String, Object>) request;
+                System.out.println("Request is a Map. Keys: " + requestMap.keySet());
+                Object emailObj = requestMap.get("email");
+                if (emailObj != null) {
+                    email = emailObj.toString().trim();
+                    System.out.println("Extracted email from Map: " + email);
+                } else {
+                    System.out.println("No 'email' key found in Map");
+                }
+            } else if (request instanceof String) {
+                // Handle plain string (with or without quotes)
+                String str = (String) request;
+                System.out.println("Request is a String: " + str);
+                email = str.trim().replaceAll("^\"|\"$", ""); // Remove surrounding quotes if present
+                System.out.println("Extracted email from String: " + email);
+            } else {
+                System.out.println("Request is neither Map nor String. Type: " + request.getClass().getName());
+                // Try to deserialize as ResendVerificationRequestDto
+                try {
+                    ResendVerificationRequestDto dto = objectMapper.convertValue(request, ResendVerificationRequestDto.class);
+                    email = dto.getEmail();
+                    System.out.println("Extracted email from DTO conversion: " + email);
+                } catch (Exception e) {
+                    System.out.println("Failed to convert to DTO: " + e.getMessage());
+                    // Ignore and try to extract email from toString
+                    String requestStr = request.toString();
+                    if (requestStr.contains("@")) {
+                        // Try to extract email from string representation
+                        email = requestStr.trim().replaceAll("^\"|\"$", "");
+                        System.out.println("Extracted email from toString: " + email);
+                    }
+                }
+            }
+            
+            if (email == null || email.trim().isEmpty()) {
+                System.out.println("Email is null or empty after extraction");
+                return ResponseEntity.badRequest().body(Map.of("error", "Email is required. Expected format: {\"email\": \"your@email.com\"} or \"your@email.com\""));
+            }
+            
+            System.out.println("Calling resendVerificationCode for email: " + email);
+            authenticationService.resendVerificationCode(email.trim());
+            System.out.println("Verification code resent successfully");
+            return ResponseEntity.ok(Map.of("message", "Verification code resent successfully."));
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+            System.err.println("Error in resendVerificationCode: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        } catch (Exception e) {
+            System.err.println("Unexpected error in resendVerificationCode: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body(Map.of("error", "An error occurred: " + e.getMessage()));
         }
     }
 
