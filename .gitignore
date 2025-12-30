@@ -3,6 +3,10 @@ venv/
 .venv/
 env/
 venv2/*
+pycache/
+__pycache__/
+*.pyc
+
 
 HELP.md
 .gradle
