@@ -5,6 +5,7 @@ import tempfile
 import os
 import sys
 import re
+import json
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 import glob
@@ -39,6 +40,25 @@ app.json.ensure_ascii = False
 
 # Configure Flask to always return JSON errors
 app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+app.config['PROPAGATE_EXCEPTIONS'] = True  # Allow error handlers to work
+
+# Middleware to ensure JSON responses for all errors
+@app.after_request
+def after_request(response):
+    """Ensure error responses are JSON."""
+    if response.status_code >= 400:
+        # If response is HTML, convert to JSON
+        if 'text/html' in response.content_type:
+            try:
+                error_data = {
+                    "error": f"HTTP {response.status_code}",
+                    "message": "An error occurred processing the request"
+                }
+                response = jsonify(error_data)
+                response.status_code = 500
+            except Exception:
+                pass
+    return response
 
 # Helper function to convert NumPy/Pandas types to Python native types
 def make_json_serializable(obj):
@@ -1176,6 +1196,42 @@ def analyze_zip():
                 status=500
             )
 
+
+# WSGI application entry point for gunicorn
+# Wrap the app to ensure JSON error responses even when gunicorn handles errors
+class JSONErrorHandler:
+    """WSGI middleware to ensure JSON error responses."""
+    
+    def __init__(self, app):
+        self.app = app
+    
+    def __call__(self, environ, start_response):
+        try:
+            return self.app(environ, start_response)
+        except Exception as e:
+            # Catch any unhandled exceptions and return JSON
+            error_msg = str(e)
+            error_traceback = traceback.format_exc()
+            app.logger.error(f"Unhandled WSGI error: {error_msg}")
+            app.logger.error(error_traceback)
+            
+            # Return JSON error response
+            error_response = {
+                "error": error_msg,
+                "details": error_traceback if app.debug else "Check server logs for details"
+            }
+            
+            # Ensure serializable
+            error_response_serializable = make_json_serializable(error_response)
+            error_json = json.dumps(error_response_serializable)
+            
+            status = '500 Internal Server Error'
+            headers = [('Content-Type', 'application/json')]
+            start_response(status, headers)
+            return [error_json.encode('utf-8')]
+
+# Create WSGI application with error handler
+application = JSONErrorHandler(app)
 
 if __name__ == "__main__":
     app.run(
