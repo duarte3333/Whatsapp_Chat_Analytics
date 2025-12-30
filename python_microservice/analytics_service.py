@@ -1212,26 +1212,40 @@ class JSONErrorHandler:
             # Catch any unhandled exceptions and return JSON
             error_msg = str(e)
             error_traceback = traceback.format_exc()
-            app.logger.error(f"Unhandled WSGI error: {error_msg}")
-            app.logger.error(error_traceback)
             
-            # Return JSON error response
-            error_response = {
-                "error": error_msg,
-                "details": error_traceback if app.debug else "Check server logs for details"
-            }
+            # Try to log, but don't fail if logger doesn't work
+            try:
+                app.logger.error(f"Unhandled WSGI error: {error_msg}")
+                app.logger.error(error_traceback)
+            except:
+                pass
             
-            # Ensure serializable
-            error_response_serializable = make_json_serializable(error_response)
-            error_json = json.dumps(error_response_serializable)
+            # Return JSON error response - always works
+            try:
+                error_response = {
+                    "error": error_msg,
+                    "details": error_traceback if app.debug else "Check server logs for details"
+                }
+                error_response_serializable = make_json_serializable(error_response)
+                error_json = json.dumps(error_response_serializable)
+            except Exception as json_err:
+                # Fallback if serialization fails
+                error_json = json.dumps({"error": str(error_msg), "details": "Error serializing error response"})
             
             status = '500 Internal Server Error'
-            headers = [('Content-Type', 'application/json')]
+            headers = [
+                ('Content-Type', 'application/json'),
+                ('Access-Control-Allow-Origin', '*'),
+            ]
             start_response(status, headers)
             return [error_json.encode('utf-8')]
 
 # Create WSGI application with error handler
+# This MUST be used by gunicorn: analytics_service:application
 application = JSONErrorHandler(app)
+
+# Also export app for backward compatibility, but application is preferred
+__all__ = ['app', 'application']
 
 if __name__ == "__main__":
     app.run(
