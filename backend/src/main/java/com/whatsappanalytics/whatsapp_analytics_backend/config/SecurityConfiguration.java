@@ -48,6 +48,8 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
             .requestMatchers(HttpMethod.POST, "/shared/guest").permitAll()
             .requestMatchers(HttpMethod.POST, "/payments/webhook").permitAll()
             .requestMatchers(HttpMethod.GET, "/payments/webhook").permitAll()
+            .requestMatchers(HttpMethod.POST, "/api/payments/webhook").permitAll()
+            .requestMatchers(HttpMethod.GET, "/api/payments/webhook").permitAll()
             .requestMatchers(
                 "/auth/**",
                 "/oauth2/**",
