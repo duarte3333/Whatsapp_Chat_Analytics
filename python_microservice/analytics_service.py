@@ -110,14 +110,18 @@ def handle_500_error(e):
             status=500
         )
 
-# Handle all exceptions
+# Handle all exceptions - MUST be registered before routes
 @app.errorhandler(Exception)
 def handle_all_exceptions(e):
     """Catch all exceptions and return JSON."""
     error_msg = str(e) if e else "Unknown error"
     error_traceback = traceback.format_exc()
-    app.logger.error(f"Unhandled exception: {error_msg}")
-    app.logger.error(error_traceback)
+    
+    try:
+        app.logger.error(f"Unhandled exception: {error_msg}")
+        app.logger.error(error_traceback)
+    except:
+        pass  # Don't fail if logger doesn't work
     
     try:
         error_response = {
@@ -125,11 +129,13 @@ def handle_all_exceptions(e):
             "details": error_traceback if app.debug else "Check server logs for details"
         }
         error_response_serializable = make_json_serializable(error_response)
-        return jsonify(error_response_serializable), 500
+        response = jsonify(error_response_serializable)
+        response.status_code = 500
+        return response
     except Exception as json_error:
         from flask import Response
         return Response(
-            '{"error": "Internal server error occurred"}',
+            json.dumps({"error": "Internal server error occurred"}),
             mimetype='application/json',
             status=500
         )
@@ -1206,8 +1212,17 @@ class JSONErrorHandler:
         self.app = app
     
     def __call__(self, environ, start_response):
+        # Wrap start_response to catch errors
+        def custom_start_response(status, headers, exc_info=None):
+            # Ensure Content-Type is JSON for errors
+            if status.startswith('500') or status.startswith('4'):
+                # Remove any existing Content-Type
+                headers = [(h, v) for h, v in headers if h.lower() != 'content-type']
+                headers.append(('Content-Type', 'application/json'))
+            return start_response(status, headers, exc_info)
+        
         try:
-            return self.app(environ, start_response)
+            return self.app(environ, custom_start_response)
         except Exception as e:
             # Catch any unhandled exceptions and return JSON
             error_msg = str(e)
@@ -1215,8 +1230,9 @@ class JSONErrorHandler:
             
             # Try to log, but don't fail if logger doesn't work
             try:
-                app.logger.error(f"Unhandled WSGI error: {error_msg}")
-                app.logger.error(error_traceback)
+                import logging
+                logging.error(f"Unhandled WSGI error: {error_msg}")
+                logging.error(error_traceback)
             except:
                 pass
             
@@ -1230,7 +1246,10 @@ class JSONErrorHandler:
                 error_json = json.dumps(error_response_serializable)
             except Exception as json_err:
                 # Fallback if serialization fails
-                error_json = json.dumps({"error": str(error_msg), "details": "Error serializing error response"})
+                error_json = json.dumps({
+                    "error": str(error_msg)[:200],  # Limit length
+                    "details": "Error serializing error response"
+                })
             
             status = '500 Internal Server Error'
             headers = [
