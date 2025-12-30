@@ -67,3 +67,30 @@ accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
 
+# Disable gunicorn's default error pages - let Flask handle it
+# This prevents gunicorn from returning HTML error pages
+def worker_abort(worker):
+    """Called when a worker receives the ABRT signal."""
+    pass
+
+# Custom error handler class
+class CustomErrorHandler:
+    """Custom error handler to return JSON instead of HTML."""
+    def __init__(self, app):
+        self.app = app
+    
+    def __call__(self, environ, start_response):
+        try:
+            return self.app(environ, start_response)
+        except Exception as e:
+            import json
+            import traceback
+            error_json = json.dumps({
+                "error": str(e),
+                "details": traceback.format_exc()
+            })
+            status = '500 Internal Server Error'
+            headers = [('Content-Type', 'application/json')]
+            start_response(status, headers)
+            return [error_json.encode('utf-8')]
+

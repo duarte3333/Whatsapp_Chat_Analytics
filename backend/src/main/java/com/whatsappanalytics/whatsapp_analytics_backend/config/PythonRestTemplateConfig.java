@@ -19,6 +19,7 @@ import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
 import org.apache.hc.core5.util.Timeout;
+import org.apache.hc.client5.http.config.RequestConfig;
 import java.util.concurrent.TimeUnit;
 
 @Configuration
@@ -47,8 +48,16 @@ public class PythonRestTemplateConfig {
                 .setSSLSocketFactory(sslSocketFactory)
                 .build();
 
+        // Configure request timeouts (5 minutes for response)
+        RequestConfig requestConfig = RequestConfig.custom()
+                .setResponseTimeout(Timeout.of(5, TimeUnit.MINUTES))
+                .setConnectionRequestTimeout(Timeout.of(30, TimeUnit.SECONDS))
+                .setConnectTimeout(Timeout.of(30, TimeUnit.SECONDS))
+                .build();
+
         CloseableHttpClient httpClient = HttpClients.custom()
                 .setConnectionManager(connectionManager)
+                .setDefaultRequestConfig(requestConfig)
                 .evictIdleConnections(Timeout.of(30, TimeUnit.SECONDS))
                 .evictExpiredConnections()
                 .build();
