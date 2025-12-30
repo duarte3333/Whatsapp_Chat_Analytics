@@ -74,8 +74,6 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
             // Generate JWT token
             String token = jwtService.generateToken(user);
 
-            System.out.println("OAuth2 login successful for user: " + email);
-
             // Redirect to frontend with token
             getRedirectStrategy().sendRedirect(request, response, frontendUrl + "/oauth-callback?token=" + token);
 

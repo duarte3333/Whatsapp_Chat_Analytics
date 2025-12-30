@@ -83,13 +83,7 @@ public class ChatMetricsService {
     }
 
     public Map<String, Object> processAnonymousFile(MultipartFile file) {
-        System.out.println("=== processAnonymousFile called ===");
-        System.out.println("File name: " + file.getOriginalFilename());
-        System.out.println("File size: " + file.getSize());
-        
         Map<String, Object> stats = sendFileToPython(file);
-        System.out.println("Received stats from Python service: " + stats);
-        System.out.println("Stats keys: " + (stats != null ? stats.keySet() : "null"));
         return stats != null ? stats : Collections.emptyMap();
     }
 

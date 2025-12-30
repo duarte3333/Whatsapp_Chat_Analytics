@@ -252,19 +252,13 @@ def get_rag_session(session_id):
 def rag_upload():
     """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
     try:
-        app.logger.info("=== /rag/upload endpoint called ===")
-        
         file = request.files.get("file")
         if file is None:
-            app.logger.warning("No file provided in request")
             return jsonify({"error": "No file provided"}), 400
         
         filename = file.filename
         if not filename:
-            app.logger.warning("Invalid filename (empty)")
             return jsonify({"error": "Invalid filename"}), 400
-        
-        app.logger.info(f"Received file: {filename}")
         
         # Get file size more reliably
         file_size = 0
@@ -279,24 +273,19 @@ def rag_upload():
                 except ValueError:
                     pass
         
-        app.logger.info(f"File size: {file_size} bytes")
-        
         # Basic filename validation (size check will be done after saving)
         filename_lower = filename.lower()
         if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
-            app.logger.warning(f"Invalid file type: {filename}")
             return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
         
         # Validate filename for security (but allow size check after saving)
         if not is_valid_filename(filename):
-            app.logger.warning(f"Invalid or dangerous filename: {filename}")
             return jsonify({"error": "Invalid or dangerous filename"}), 400
         
         # If we have a size, validate it
         if file_size > 0:
             validation_error = validate_file_upload(filename, file_size)
             if validation_error:
-                app.logger.warning(f"File validation failed: {validation_error}")
                 return jsonify({"error": validation_error}), 400
 
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -311,7 +300,6 @@ def rag_upload():
                 
                 # Check file size after saving
                 actual_size = os.path.getsize(txt_path)
-                app.logger.info(f"Saved TXT file, actual size: {actual_size} bytes")
                 
                 if actual_size == 0:
                     return jsonify({"error": "File is empty"}), 400
@@ -328,7 +316,6 @@ def rag_upload():
                 
                 # Check file size after saving
                 actual_size = os.path.getsize(zip_path)
-                app.logger.info(f"Saved ZIP file, actual size: {actual_size} bytes")
                 
                 if actual_size == 0:
                     return jsonify({"error": "File is empty"}), 400
@@ -339,7 +326,6 @@ def rag_upload():
                 # Safe extraction with validation
                 error_msg, chat_file_path = safe_extract_zip(zip_path, tmpdir)
                 if error_msg:
-                    app.logger.warning(f"ZIP extraction failed: {error_msg}")
                     return jsonify({"error": error_msg}), 400
                 
                 if not chat_file_path:
@@ -352,21 +338,15 @@ def rag_upload():
                     chat_file_path = chat_files[0]
 
             # Parse chat
-            app.logger.info(f"Parsing chat file: {chat_file_path}")
             parser = WhatsAppChatParser()
             df = parser.parse_to_csv(chat_file_path)
             
             if df.empty:
-                app.logger.warning("No messages found in chat file")
                 return jsonify({"error": "No messages found in chat"}), 400
-
-            app.logger.info(f"Parsed {len(df)} messages from chat")
             
             # Create RAG session
             session_id = create_rag_session(df)
             group_title = parser.group_name if parser.group_name else "WhatsApp Chat"
-
-            app.logger.info(f"RAG session created: {session_id}")
             
             #convert python dictionary to json
             return jsonify({
@@ -802,7 +782,6 @@ def compute_chart_data(df):
     
     # ========== OPTIMIZATION: Pre-compute helper columns once ==========
     # This avoids calling functions repeatedly in loops
-    app.logger.info("Pre-computing helper columns...")
     df['_is_media'] = df[message_col].apply(is_media_message)
     df['_has_emoji'] = df[message_col].apply(has_emoji)
     df['_is_audio'] = df[message_col].apply(is_audio_message)
@@ -923,7 +902,6 @@ def compute_chart_data(df):
         return emojis
     
     # ========== OPTIMIZATION: Vectorized emoji extraction ==========
-    app.logger.info("Extracting emojis (vectorized)...")
     # Extract all emojis at once using apply (much faster than loops)
     all_emoji_lists = df[message_col].apply(extract_emojis)
     # Flatten list of lists
@@ -1116,11 +1094,8 @@ def analyze_zip():
         - expires_in_seconds: TTL for RAG session
     """
     try:
-        app.logger.info("=== /analyze endpoint called ===")
-        
         file = request.files.get("file")
         if file is None:
-            app.logger.warning("No file provided in request")
             return jsonify({"error": "No file provided"}), 400
         
         filename = file.filename
@@ -1131,19 +1106,15 @@ def analyze_zip():
         file_size = file.content_length if hasattr(file, 'content_length') else 0
         validation_error = validate_file_upload(filename, file_size)
         if validation_error:
-            app.logger.warning(f"File validation failed: {validation_error}")
             return jsonify({"error": validation_error}), 400
         
         filename_lower = filename.lower()
-        app.logger.info(f"Processing file: {filename}, size: {file_size}")
         
         if not (filename_lower.endswith(".zip") or filename_lower.endswith(".txt")):
-            app.logger.warning(f"Invalid file type: {filename}")
             return jsonify({"error": "File must be a ZIP file or a TXT file"}), 400
 
         # Check if RAG should be enabled (default: false for speed)
         enable_rag = request.args.get("enable_rag", "false").lower() == "true"
-        app.logger.info(f"RAG enabled: {enable_rag}")
         with tempfile.TemporaryDirectory() as tmpdir:
             chat_file_path = None
             
@@ -1163,7 +1134,6 @@ def analyze_zip():
                 # Safe extraction with validation
                 error_msg, chat_file_path = safe_extract_zip(zip_path, tmpdir)
                 if error_msg:
-                    app.logger.warning(f"ZIP extraction failed: {error_msg}")
                     return jsonify({"error": error_msg}), 400
                 
                 if not chat_file_path:
@@ -1172,7 +1142,6 @@ def analyze_zip():
                     if not chat_files:
                         chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
                     if not chat_files:
-                        app.logger.error(f"No chat file found in ZIP. Contents: {os.listdir(tmpdir)}")
                         return jsonify({"error": "No chat file found in ZIP"}), 400
                     chat_file_path = chat_files[0]
             
@@ -1186,7 +1155,6 @@ def analyze_zip():
                 return jsonify({"error": f"Failed to parse chat file: {str(parse_error)}"}), 500
             
             if df.empty:
-                app.logger.warning("DataFrame is empty after parsing")
                 return jsonify({"error": "No messages found in chat file"}), 400
 
             # Compute basic statistics
@@ -1213,9 +1181,7 @@ def analyze_zip():
 
             # Compute chart data
             try:
-                app.logger.info("Computing chart data...")
                 chart_data = compute_chart_data(df)
-                app.logger.info("Chart data computed successfully")
             except Exception as chart_error:
                 app.logger.error(f"Error computing chart data: {chart_error}")
                 app.logger.error(traceback.format_exc())

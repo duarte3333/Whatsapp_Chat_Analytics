@@ -189,7 +189,6 @@ public class AuthenticationController {
                 return ResponseEntity.status(401).build();
             }
 
-            System.out.println("Fetching user info for: " + user.getEmail());
             return ResponseEntity.ok(user);
 
         } catch (ClassCastException e) {

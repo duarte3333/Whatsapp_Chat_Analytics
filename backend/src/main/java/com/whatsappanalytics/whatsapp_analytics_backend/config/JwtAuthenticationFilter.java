@@ -48,18 +48,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         // Check if this is a public endpoint - if so, skip JWT validation
         if (isPublicEndpoint(requestPath)) {
-            System.out.println("JWT Filter: Public endpoint detected: " + requestPath + ", skipping JWT validation");
             filterChain.doFilter(request, response);
             return;
         }
-        
-        System.out.println("JWT Filter: Protected endpoint: " + requestPath);
 
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            // Only log for non-OPTIONS requests to reduce noise
-            if (!"OPTIONS".equals(request.getMethod())) {
-                System.out.println("No Bearer token found for " + request.getMethod() + " " + requestPath + ", passing through without auth");
-            }
             filterChain.doFilter(request, response);
             return;
         }
@@ -86,7 +79,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 } else {
-                    System.out.println("JWT token invalid for user: " + username);
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid JWT token");
                     return;
                 }
