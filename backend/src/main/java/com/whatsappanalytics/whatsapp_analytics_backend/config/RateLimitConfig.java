@@ -34,58 +34,58 @@ public class RateLimitConfig {
     }
 
     /**
-     * Create bucket for anonymous users (stricter limits)
-     * - 10 requests per minute
-     * - 50 requests per hour
+     * Create bucket for anonymous users (relaxed limits)
+     * - 100 requests per minute
+     * - 1000 requests per hour
      */
     private Bucket createAnonymousBucket() {
         return Bucket.builder()
-                .addLimit(Bandwidth.classic(10, Refill.intervally(10, Duration.ofMinutes(1))))
-                .addLimit(Bandwidth.classic(50, Refill.intervally(50, Duration.ofHours(1))))
+                .addLimit(Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1))))
+                .addLimit(Bandwidth.classic(1000, Refill.intervally(1000, Duration.ofHours(1))))
                 .build();
     }
 
     /**
-     * Create bucket for authenticated users (more lenient)
-     * - 30 requests per minute
-     * - 200 requests per hour
+     * Create bucket for authenticated users (very relaxed limits)
+     * - 200 requests per minute
+     * - 5000 requests per hour
      */
     private Bucket createAuthenticatedBucket() {
         return Bucket.builder()
-                .addLimit(Bandwidth.classic(30, Refill.intervally(30, Duration.ofMinutes(1))))
-                .addLimit(Bandwidth.classic(200, Refill.intervally(200, Duration.ofHours(1))))
+                .addLimit(Bandwidth.classic(200, Refill.intervally(200, Duration.ofMinutes(1))))
+                .addLimit(Bandwidth.classic(5000, Refill.intervally(5000, Duration.ofHours(1))))
                 .build();
     }
 
     /**
-     * Create bucket for file uploads (very strict)
-     * - 3 uploads per hour
+     * Create bucket for file uploads (relaxed)
+     * - 50 uploads per hour
      */
     public Bucket createUploadBucket(String key) {
         return cache.computeIfAbsent("upload:" + key, k -> Bucket.builder()
-                .addLimit(Bandwidth.classic(3, Refill.intervally(3, Duration.ofHours(1))))
+                .addLimit(Bandwidth.classic(50, Refill.intervally(50, Duration.ofHours(1))))
                 .build());
     }
 
     /**
-     * Create bucket for authentication endpoints (prevent brute force)
-     * - 5 attempts per 15 minutes
+     * Create bucket for authentication endpoints (relaxed to prevent brute force)
+     * - 20 attempts per 15 minutes
      */
     public Bucket createAuthBucket(String key) {
         return cache.computeIfAbsent("auth:" + key, k -> Bucket.builder()
-                .addLimit(Bandwidth.classic(5, Refill.intervally(5, Duration.ofMinutes(15))))
+                .addLimit(Bandwidth.classic(20, Refill.intervally(20, Duration.ofMinutes(15))))
                 .build());
     }
 
     /**
-     * Create bucket for resend verification code (very strict to prevent email spam)
-     * - 3 attempts per hour
-     * - 1 attempt per 5 minutes
+     * Create bucket for resend verification code (relaxed to prevent email spam)
+     * - 10 attempts per hour
+     * - 3 attempts per 5 minutes
      */
     public Bucket createResendCodeBucket(String key) {
         return cache.computeIfAbsent("resend:" + key, k -> Bucket.builder()
-                .addLimit(Bandwidth.classic(3, Refill.intervally(3, Duration.ofHours(1))))
-                .addLimit(Bandwidth.classic(1, Refill.intervally(1, Duration.ofMinutes(5))))
+                .addLimit(Bandwidth.classic(10, Refill.intervally(10, Duration.ofHours(1))))
+                .addLimit(Bandwidth.classic(3, Refill.intervally(3, Duration.ofMinutes(5))))
                 .build());
     }
 }

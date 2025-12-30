@@ -96,3 +96,4 @@ echo "1. Verify service was restarted: sudo systemctl restart python-microservic
 echo "2. Check logs: sudo journalctl -u python-microservice -f"
 echo "3. Test directly: curl -X POST http://localhost:5050/analyze -F 'file=@test.zip' -v"
 
+

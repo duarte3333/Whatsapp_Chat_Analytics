@@ -56,7 +56,7 @@ app.config['PROPAGATE_EXCEPTIONS'] = True  # Allow error handlers to work
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
-    default_limits=["200 per hour", "30 per minute"],
+    default_limits=["5000 per hour", "200 per minute"],
     storage_uri="memory://"  # In-memory storage (use Redis in production)
 )
 
@@ -248,7 +248,7 @@ def get_rag_session(session_id):
 # ============================================================
 
 @app.route("/rag/upload", methods=["POST"])
-@limiter.limit("3 per hour")  # Very strict for file uploads
+@limiter.limit("50 per hour")  # Relaxed for file uploads
 def rag_upload():
     """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
     file = request.files.get("file")
@@ -1047,7 +1047,7 @@ def compute_chart_data(df):
 
 
 @app.route("/analyze", methods=["POST"])
-@limiter.limit("3 per hour")  # Very strict for file uploads
+@limiter.limit("50 per hour")  # Relaxed for file uploads
 def analyze_zip():
     """
     Upload a WhatsApp chat file (ZIP or TXT) and get metrics + RAG session.

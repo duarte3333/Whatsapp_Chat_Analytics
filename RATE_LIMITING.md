@@ -146,3 +146,4 @@ Rate limits can be adjusted in:
 - Limits reset automatically based on time windows
 - OPTIONS requests are excluded from rate limiting (CORS preflight)
 
+
