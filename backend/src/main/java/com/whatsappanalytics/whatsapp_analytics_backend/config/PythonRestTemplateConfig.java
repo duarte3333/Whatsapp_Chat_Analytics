@@ -18,6 +18,8 @@ import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuil
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
 import org.apache.hc.core5.ssl.SSLContexts;
 import org.apache.hc.client5.http.ssl.TrustSelfSignedStrategy;
+import org.apache.hc.core5.util.Timeout;
+import java.util.concurrent.TimeUnit;
 
 @Configuration
 public class PythonRestTemplateConfig {
@@ -47,9 +49,17 @@ public class PythonRestTemplateConfig {
 
         CloseableHttpClient httpClient = HttpClients.custom()
                 .setConnectionManager(connectionManager)
+                .evictIdleConnections(Timeout.of(30, TimeUnit.SECONDS))
+                .evictExpiredConnections()
                 .build();
 
         var requestFactory = new HttpComponentsClientHttpRequestFactory(httpClient);
+        // Set timeouts: connection timeout, read timeout (for file processing)
+        // 5 minutes total timeout for large file processing
+        // Convert Timeout to milliseconds (int) for HttpComponentsClientHttpRequestFactory
+        requestFactory.setConnectTimeout((int) Timeout.of(30, TimeUnit.SECONDS).toMilliseconds());
+        requestFactory.setConnectionRequestTimeout((int) Timeout.of(30, TimeUnit.SECONDS).toMilliseconds());
+        requestFactory.setReadTimeout((int) Timeout.of(5, TimeUnit.MINUTES).toMilliseconds()); // 5 minutes for response
 
         return new RestTemplate(requestFactory);
     }
