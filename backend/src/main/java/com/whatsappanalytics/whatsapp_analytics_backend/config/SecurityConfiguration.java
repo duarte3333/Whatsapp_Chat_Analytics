@@ -66,7 +66,7 @@ public SecurityFilterChain securityFilterChain(HttpSecurity http, @Qualifier("co
                 "/login/**",
                 "/v3/api-docs/**",
                 "/api/payments/webhook",
-		"/payments/webhook",
+		        "/payments/webhook",
                 "/swagger-ui/**",
                 "/swagger-ui.html",
                 "/metrics/chat/upload-anonymous",

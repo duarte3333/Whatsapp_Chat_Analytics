@@ -4,8 +4,9 @@ venv/
 env/
 venv2/*
 pycache/
-__pycache__/
-*.pyc
+**/__pycache__/
+**/*.pyc
+
 
 
 HELP.md
@@ -54,3 +55,4 @@ out/
 *.csv
 stats_computation/*.csv
 .env/
+.env*
