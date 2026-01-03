@@ -12,7 +12,7 @@ Chatlytics uses a microservices architecture with a **Spring Boot** backend for 
 
 ## Architecture Overview
 
-![Architecture Diagram](doc/chatlytics_page-0001.jpg)
+![Architecture Diagram](docs/assets/chatlytics_page-0001.jpg)
 
 The system follows a microservices architecture deployed on AWS EC2:
 
