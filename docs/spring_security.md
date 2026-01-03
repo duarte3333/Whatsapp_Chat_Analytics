@@ -1,6 +1,5 @@
 # Spring Security Documentation
 
-## Introduction
 
 This document describes the theoretical background and the practical implementation of authentication and authorization in the application. The implementation is based on **Spring Security**, **JWT**, and optional **OAuth2** providers.
 
@@ -8,7 +7,6 @@ The overall request flow and component interaction follow the standard Spring Se
 
 ![Spring Security Architecture](assets/spring_security.jpg)
 
----
 
 ## Theoretical Background
 
@@ -23,24 +21,6 @@ The overall request flow and component interaction follow the standard Spring Se
   - Based on: roles, permissions, or authorities
   - **Note**: Authentication must occur before authorization can be evaluated
 
-### Stateless vs. Stateful Authentication
-
-Authentication systems can be categorized as **stateful** or **stateless**:
-
-#### Stateful Authentication
-- Server maintains session state
-- Authentication data stored in server sessions
-- Uses session identifiers (typically cookies)
-- **Challenges**: scalability, session replication, sticky sessions
-
-#### Stateless Authentication
-- No server-side session storage
-- Each request contains complete authentication information
-- JWT-based authentication follows this model
-- **Benefits**: 
-  - Better scalability
-  - RESTful principles alignment
-  - Simplified horizontal scaling
 
 ### Why JWT Tokens Are Sent in Request Headers
 
@@ -67,17 +47,6 @@ Client-side token storage options and their trade-offs:
 | **HttpOnly Cookies** | XSS resistant | Requires CSRF mitigation |
 
 We choose **localStorage** due to simplicity, but for future projects we might rethink this strategy. 
-
-### CORS and Cross-Origin Requests
-
-When frontend and backend are hosted on different origins, browsers enforce **CORS** rules.
-
-**CORS configuration determines**:
-- Which origins can make requests
-- Which HTTP methods are permitted
-- Which headers may be sent
-
-> **Important**: Since JWT authentication uses the `Authorization` header, this header must be explicitly allowed in CORS configuration. Incorrect CORS setup can block authenticated requests entirely.
 
 ### JWT Structure and Claims
 
@@ -127,10 +96,7 @@ header.payload.signature
 
 ---
 
-
-## Practical Implementation (Spring Security)
-
-![Spring Security Architecture](assets/spring_security.jpg)
+## Practical Implementation
 
 ### 1. Request and Servlet Entry Point
 
