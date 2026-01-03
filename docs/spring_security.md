@@ -88,6 +88,12 @@ We choose **localStorage** due to simplicity, but for future projects we might r
 
 ### 3. OAuth2
 
+OAuth2 is an industry-standard protocol for secure authentication through third-party providers like Google.
+
+The following diagram illustrates the complete OAuth2 flow:
+
+![OAuth2 Authentication Flow](assets/oauth2_flow.png)
+
 When a user chooses to authenticate using Google, the authentication process begins in the frontend. The client redirects the user to Google’s login page, where the user enters their credentials and grants consent. Upon successful authentication, Google redirects the user back to a pre-registered redirect URI. In this system, the production redirect URI is:
 
 https://chat-lytics.com/api/login/oauth2/code/google?code=AUTH_CODE
