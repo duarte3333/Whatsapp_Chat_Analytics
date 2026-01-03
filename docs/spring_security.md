@@ -5,12 +5,12 @@ This document describes the theoretical background and the practical implementat
 
 The overall request flow and component interaction follow the standard Spring Security authentication pipeline, illustrated in the diagram below.
 
-![Spring Security Architecture](assets/spring_security.jpg)
+![Spring Security Architecture](assets/spring_security.png)
 
 
 ## Theoretical Background
 
-### Authentication and Authorization
+### 1. Authentication and Authorization
 
 **Authentication** and **authorization** are closely related but conceptually distinct concerns in application security:
 
@@ -22,33 +22,12 @@ The overall request flow and component interaction follow the standard Spring Se
   - **Note**: Authentication must occur before authorization can be evaluated
 
 
-### Why JWT Tokens Are Sent in Request Headers
+### 2. JSON Web Tokens (JWT)
 
-JWTs are transmitted using the `Authorization` header with the `Bearer` scheme:
+JSON Web Tokens (JWTs) are a compact, self-contained mechanism for securely transmitting authentication and authorization information between a client and a server. They are commonly used in stateless authentication systems, where the server does not store session state and instead relies on cryptographically signed tokens provided by the client on each request.
 
-```http
-Authorization: Bearer <jwt-token>
-```
+In this architecture, JWTs are issued by the backend after successful authentication (e.g., username/password or OAuth 2.0 login) and are subsequently included by the client in every authenticated request. The server validates the token to verify the user’s identity and permissions without requiring additional database lookups or session storage.
 
-**Benefits of header-based authentication**:
-- Headers carry request metadata naturally
-- Authentication handled before application logic
-- Avoids cookie pitfalls (implicit browser behavior, CSRF)
-- Clean integration with API clients and frontend frameworks
-
-### Token Storage Strategies
-
-Client-side token storage options and their trade-offs:
-
-| Storage Method | Pros | Cons |
-|---|---|---|
-| **Memory** | Strong XSS protection | Lost on page refresh |
-| **LocalStorage** | Survives refreshes/restarts | XSS vulnerability |
-| **HttpOnly Cookies** | XSS resistant | Requires CSRF mitigation |
-
-We choose **localStorage** due to simplicity, but for future projects we might rethink this strategy. 
-
-### JWT Structure and Claims
 
 A JWT consists of three base64-encoded components:
 
@@ -64,15 +43,15 @@ header.payload.signature
 
 > **Security**: Any modification to header or payload invalidates the signature
 
-### Token Generation and Validation
+### 2.1 Token Generation and Validation
 
-#### Token Generation
+##### Token Generation
 1. Successful authentication occurs
 2. Application constructs claims
 3. Token signed using secret/key pair
 4. Token returned to client
 
-#### Token Validation (on every request)
+##### Token Validation (on every request)
 1. Verify signature
 2. Check expiration time
 3. Validate time-based constraints
@@ -80,44 +59,60 @@ header.payload.signature
 
 > Only tokens passing **all** validation steps are accepted
 
-### JWT and OAuth2 Integration
 
-**OAuth2** delegates authentication to external identity providers (Google, Microsoft, etc.)
+### 2.2 Why JWT Tokens Are Sent in Request Headers
 
-#### How it works:
-1. OAuth2 handles user identity verification and consent
-2. Application remains agnostic of user credentials  
-3. After OAuth2 success → application issues its own JWT
-4. JWT becomes primary authentication for subsequent API requests
+JWTs are transmitted using the `Authorization` header with the `Bearer` scheme:
 
-**Benefits**:
-- Compact, stateless authentication representation
-- No credential management burden
+```http
+Authorization: Bearer <jwt-token>
+```
 
----
+**Benefits of header-based authentication**:
+- Headers carry request metadata naturally
+- Authentication handled before application logic
+- Avoids cookie pitfalls (implicit browser behavior, CSRF)
+- Clean integration with API clients and frontend frameworks
+
+### 2.3 Token Storage Strategies
+
+Client-side token storage options and their trade-offs:
+
+| Storage Method | Pros | Cons |
+|---|---|---|
+| **Memory** | Strong XSS protection | Lost on page refresh |
+| **LocalStorage** | Survives refreshes/restarts | XSS vulnerability |
+| **HttpOnly Cookies** | XSS resistant | Requires CSRF mitigation |
+
+We choose **localStorage** due to simplicity, but for future projects we might rethink this strategy. 
+
+### 3. OAuth2
+
+When a user chooses to authenticate using Google, the authentication process begins in the frontend. The client redirects the user to Google’s login page, where the user enters their credentials and grants consent. Upon successful authentication, Google redirects the user back to a pre-registered redirect URI. In this system, the production redirect URI is:
+
+https://chat-lytics.com/api/login/oauth2/code/google?code=AUTH_CODE
+
+The `code` parameter is an **authorization code**. This code is short-lived and can be used only once. Its purpose is to allow the backend to securely obtain authentication tokens without exposing sensitive credentials to the frontend.
+
+After receiving the authorization code, the backend sends a server-to-server POST request to Google’s token endpoint:
+
+https://oauth2.googleapis.com/token
+
+This request includes the authorization code along with the application’s OAuth credentials (`client_id` and `client_secret`, set in our .env), the exact redirect URI used during the login process, and the grant type set to `authorization_code`. Google validates this request and, if successful, returns an access token.
+
+The backend then validates the received token to ensure its authenticity and integrity. From the validated token, the backend can extract user information such as the user’s email address, display name, and profile picture.
+
+Once this response has been validated, the backend trusts the identity asserted by the provider. At this point, the backend issues its own JSON Web Token (JWT), which represents the authenticated user within the application. This application-issued JWT is returned to the client and is included in all subsequent API requests.
 
 ## Practical Implementation
 
-### 1. Request and Servlet Entry Point
+### The Request Journey Through Spring Security
 
-**Request Flow**:
-```
-Client Request → Spring Security Filter Chain → DispatcherServlet → Controller
-```
+When a client sends a request to our application, it embarks on a carefully orchestrated journey through the Spring Security ecosystem, as illustrated in the [Spring Security architecture diagram](assets/spring_security.png). The request follows a clear path: `Client Request → Spring Security Filter Chain → DispatcherServlet → Controller`. Importantly, requests never directly reach the controllers; they must first navigate through the Spring Security Filter Chain, where each filter performs specific security tasks before the DispatcherServlet can handle routing.
 
-- Requests **do not** directly reach controllers
-- Must pass through Spring Security Filter Chain first
-- Each filter performs specific security tasks
-- DispatcherServlet handles routing only after security checks
+### Understanding Filter Failures and Response Codes
 
-### 2. Filter Failures and HTTP Status Codes
-
-**When filters fail**:
-
-| Status Code | Meaning | When It Occurs |
-|---|---|---|
-| **401 Unauthorized** | Authentication missing/invalid | No valid JWT token |
-| **403 Forbidden** | Access denied | Valid auth, insufficient permissions |
+If security filters encounter issues during this journey, they respond with specific HTTP status codes that communicate the nature of the problem. When authentication is missing or invalid (such as when no valid JWT token is provided), the system returns a **401 Unauthorized** response. Conversely, when authentication is valid but the user lacks sufficient permissions for the requested resource, a **403 Forbidden** response is generated. This distinction is crucial for clients to understand whether they need to authenticate or if they're simply not authorized for a particular action.
 
 #### Common HTTP Status Reference:
 | Code | Status | Description |
@@ -130,117 +125,24 @@ Client Request → Spring Security Filter Chain → DispatcherServlet → Contro
 | **404** | Not Found | Resource not found |
 | **500** | Internal Server Error | Server error |
 
-### 3. JWT Authentication Filter
+### JWT Authentication Filter in Action
 
-The **JWT Authentication Filter** intercepts incoming requests and:
+The **JWT Authentication Filter** serves as the gatekeeper for incoming requests. When a request arrives, this filter extracts the `Authorization` header and examines it for the presence of a JWT token. It then validates both the token's format and its cryptographic signature. If no token is present, the request continues through the system as an unauthenticated request, allowing public endpoints to function normally.
 
-1. Extracts the `Authorization` header
-2. Checks for JWT presence  
-3. Validates token format and signature
-4. If no token → request continues as **unauthenticated**
+### The Authentication Manager Workflow
 
-### 4. Authentication Manager and Providers
+Once the filter has processed the initial request, it creates an appropriate `Authentication` object (such as a `UsernamePasswordAuthenticationToken`) and delegates the authentication process to the `AuthenticationManager`. This manager then coordinates with one or more `AuthenticationProviders` to verify the user's credentials.
 
-**Process Flow**:
-1. Filter creates `Authentication` object (e.g., `UsernamePasswordAuthenticationToken`)
-2. Authentication delegated to `AuthenticationManager`
-3. Manager delegates to one or more `AuthenticationProviders`
+The system supports multiple authentication approaches. For traditional email and password authentication, passwords are stored as secure hashes using one-way functions, and incoming passwords are hashed and compared against stored values. The system never stores plaintext passwords, ensuring security even if the database is compromised.
 
-#### Available Authentication Providers:
+For OAuth2 authentication with providers like Google or Microsoft, the setup requires registering the application in the provider's console to receive a client ID and secret. Redirect URIs must be configured for both development (`http://localhost:8080/login/oauth2/code/google`) and production environments (`https://chat-lytics.com/api/login/oauth2/code/google`). The OAuth2 flow begins when the provider authenticates the user and redirects back to our application with an authorization code, which we then exchange for an access token.
 
-##### Email + Password Authentication
-- Passwords stored as **hashes** (one-way function)
-- Incoming password hashed and compared to stored hash
-- **Never** store plaintext passwords
+### UserDetailsService and User Data Loading
 
-##### OAuth2 Authentication (Google, Microsoft)
-**Setup Requirements**:
-- Application registered in provider console
-- Client ID and secret issued
-- Redirect URIs configured:
-  ```
-  Dev:  http://localhost:8080/login/oauth2/code/google
-  Prod: https://chat-lytics.com/api/login/oauth2/code/google
-  ```
+After the appropriate authentication provider is selected, the **UserDetailsService** takes responsibility for loading comprehensive user data. The user entity implements the `UserDetails` interface, which exposes critical information including core user details (`getUsername()`, `getPassword()`, `getAuthorities()`) and account status checks (`isAccountNonExpired()`, `isAccountNonLocked()`, `isCredentialsNonExpired()`, `isEnabled()`).
 
-**Flow**:
-1. Provider authenticates user
-2. Redirects back with authorization code
-3. Application exchanges code for access token
+This design follows the **principle of least privilege**, where authorities define user roles and permissions with the minimum access necessary for users to perform their required functions.
 
-### 5. UserDetailsService
+### SecurityContextHolder and State Management
 
-After provider selection, **UserDetailsService** loads user data.
-
-#### UserDetails Interface
-The user entity implements `UserDetails`, exposing:
-
-```java
-// Core user information
-getUsername()
-getPassword()
-getAuthorities()  // Roles and permissions
-
-// Account status checks
-isAccountNonExpired()
-isAccountNonLocked()
-isCredentialsNonExpired()
-isEnabled()
-```
-
-> **Security Principle**: Authorities define user roles and permissions following the **principle of least privilege**
-
-### 6. SecurityContextHolder
-
-#### Authentication Success Flow:
-1. Authenticated `Authentication` object created
-2. Stored in `SecurityContext`
-3. Context held by `SecurityContextHolder`
-
-#### SecurityContextHolder Functions:
-- Stores authentication info for request duration
-- Makes authenticated principal available app-wide
-- Access via: `SecurityContextHolder.getContext().getAuthentication()`
-
-#### Stateless Setup (JWT):
-```
-Request → JWT Validation → Context Reconstruction → Process → Context Cleared
-```
-
-- Context reconstructed on **every** request from JWT
-- **No** server-side session storage
-- Context automatically cleared after request
-
----
-
-## Frontend Considerations
-
-### Post-Login Optimization
-
-After successful login:
-
-#### **DO**: Cache User Data in Auth Context
-```typescript
-// Cache user-related data
-interface User {
-  id: string;
-  email: string;
-  credits: number;
-  roles: string[];
-}
-
-const authContext = {
-  user: userData,     // Cached user info
-  token: jwtToken,    // Authentication token
-  refreshUser: () => // Function to update cache
-}
-```
-
-#### **DON'T**: Refetch on Every Navigation
-- Avoid fetching user metadata on every page change
-- Prevents unnecessary API calls
-- Improves performance and user experience
-
-### Key Principle
-> **Token presence** = Authentication state  
-> **Cached user data** = UX state and permissions
+Upon successful authentication, the system creates an authenticated `Authentication` object and stores it in the `SecurityContext`, which is then held by the `SecurityContextHolder`. This holder serves as the central repository for authentication information throughout the request's lifecycle, making the authenticated principal available application-wide through `SecurityContextHolder.getContext().getAuthentication()`.
