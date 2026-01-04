@@ -82,10 +82,13 @@ class WhatsAppChatParser:
                 if not stripped:
                     continue
                 
-                # Only clean unicode if line might be a message (starts with [)
-                if stripped.startswith('['):
+                # Check if line might be a message (starts with [ for iOS or DD/MM for Android)
+                is_potential_message = stripped.startswith('[') or (len(stripped) > 5 and stripped[2] == '/' and stripped[5] == '/')
+                
+                if is_potential_message:
                     cleaned_line = clean_unicode_controls(stripped)
                     new_message = parse_message_line(cleaned_line, line_num, sender_mapping=mapping)
+                    
                     
                     if new_message:
                         if current_message:

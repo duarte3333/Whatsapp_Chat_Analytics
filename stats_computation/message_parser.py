@@ -9,8 +9,13 @@ from text_utils import clean_unicode_controls, remove_emojis
 # Me identifiers to filter out
 ME_IDENTIFIERS = {"Eu", "Me", "Yo", "Ich", "Je", "Io", "Я", "أنا", "私", "我"}
 
-# Pattern supports both DD/MM/YYYY and DD/MM/YY formats
-MESSAGE_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2,4}), (\d{2}:\d{2}:\d{2})\] ([^:]+): (.+)$')
+# Pattern supports multiple WhatsApp export formats:
+# iOS: [DD/MM/YYYY, HH:MM:SS] Sender: Message
+# Android (old): DD/MM/YY, HH:MM - Sender: Message (no brackets, no seconds, hyphen before sender)
+# Android (new): [DD/MM/YYYY HH:MM:SS] Sender: Message (no comma)
+# Also supports DD/MM/YY format
+IOS_PATTERN = re.compile(r'^\[(\d{2}/\d{2}/\d{2,4})[, ]+(\d{2}:\d{2}(?::\d{2})?)\] ([^:]+): (.+)$')
+ANDROID_PATTERN = re.compile(r'^(\d{2}/\d{2}/\d{2,4}), (\d{2}:\d{2})\s*-\s*([^:]+): (.+)$')
 
 # Media detection patterns
 MEDIA_TYPES = {'image', 'photo', 'picture', 'imagem', 'foto', 'bild', 'audio', 'sound', 'voice', 
@@ -32,7 +37,21 @@ SPECIFIC_PATTERNS = [
 def parse_timestamp(date_str: str, time_str: str) -> Optional[str]:
     """Parse WhatsApp date and time format to ISO timestamp."""
     try:
-        fmt = "%d/%m/%y %H:%M:%S" if len(date_str.split('/')[-1]) == 2 else "%d/%m/%Y %H:%M:%S"
+        # Handle both 2-digit and 4-digit years
+        year_len = len(date_str.split('/')[-1])
+        
+        # Handle time with or without seconds
+        if ':' in time_str:
+            time_parts = time_str.split(':')
+            if len(time_parts) == 2:
+                # No seconds, add :00
+                time_str = f"{time_str}:00"
+        
+        if year_len == 2:
+            fmt = "%d/%m/%y %H:%M:%S"
+        else:
+            fmt = "%d/%m/%Y %H:%M:%S"
+        
         return datetime.strptime(f"{date_str} {time_str}", fmt).strftime("%Y-%m-%d %H:%M:%S")
     except ValueError:
         return None
@@ -59,9 +78,13 @@ def is_media_message(message: str) -> bool:
 
 def parse_message_line(line: str, line_num: int, sender_mapping: dict = None) -> Optional[Dict[str, Any]]:
     """Parse a single line that starts a new message."""
-    match = MESSAGE_PATTERN.match(line)
+    # Try iOS format first (with brackets)
+    match = IOS_PATTERN.match(line)
     if not match:
-        return None
+        # Try Android format (no brackets, hyphen before sender)
+        match = ANDROID_PATTERN.match(line)
+        if not match:
+            return None
     
     date_str, time_str, sender, message = match.groups()
     

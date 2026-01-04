@@ -100,12 +100,12 @@ def validate_zip_contents(zip_path: str) -> Tuple[Optional[str], bool]:
                     if entry_name_lower.endswith(f'.{ext}'):
                         return (f"ZIP contains dangerous file type: {entry_name}", False)
                 
-                # Check for _chat.txt file
-                if entry_name_lower.endswith('_chat.txt'):
+                # Check for any .txt file (prefer _chat.txt but accept any .txt)
+                if entry_name_lower.endswith('.txt'):
                     has_chat_file = True
             
             if not has_chat_file:
-                return ("The ZIP file does not contain a .txt file with the chat", False)
+                return ("The ZIP file does not contain a .txt file", False)
             
             return (None, True)
             
@@ -166,10 +166,52 @@ def sanitize_text_input(text: str, max_length: int = 10000) -> str:
     return sanitized
 
 
+def is_whatsapp_chat_file(file_path: str) -> bool:
+    """
+    Check if a file is a WhatsApp chat file by examining its content.
+    WhatsApp chat files start with lines like: [DD/MM/YYYY, HH:MM:SS] Sender: Message
+    """
+    try:
+        if not os.path.exists(file_path) or not os.path.isfile(file_path):
+            return False
+        
+        # Check file size - chat files should be reasonable size
+        file_size = os.path.getsize(file_path)
+        if file_size == 0 or file_size > 10 * 1024 * 1024:  # Max 10MB
+            return False
+        
+        # Read first few lines to check format
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines_checked = 0
+            chat_format_lines = 0
+            
+            for line in f:
+                lines_checked += 1
+                if lines_checked > 20:  # Check first 20 lines
+                    break
+                
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                
+                # WhatsApp chat format: [DD/MM/YYYY, HH:MM:SS] Sender: Message
+                if stripped.startswith('[') and ']' in stripped and ':' in stripped:
+                    # Check if it looks like a date/time pattern
+                    if any(char.isdigit() for char in stripped[:20]):
+                        chat_format_lines += 1
+            
+            # If at least 2 lines match WhatsApp format, it's likely a chat file
+            return chat_format_lines >= 2
+    
+    except Exception:
+        return False
+
+
 def safe_extract_zip(zip_path: str, extract_to: str) -> Tuple[Optional[str], Optional[str]]:
     """
     Safely extract ZIP file, validating all entries.
     Returns: (error_message, chat_file_path)
+    Intelligently finds the WhatsApp chat file by checking content, not just filename.
     """
     error_msg, has_chat_file = validate_zip_contents(zip_path)
     if error_msg:
@@ -179,36 +221,84 @@ def safe_extract_zip(zip_path: str, extract_to: str) -> Tuple[Optional[str], Opt
         return ("The ZIP file does not contain a .txt file with the chat", None)
     
     try:
-        chat_file_path = None
+        txt_files = []
         
         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
             # Extract all files safely
             for entry_info in zip_ref.infolist():
                 entry_name = entry_info.filename
                 
+                # Skip directories
+                if entry_name.endswith('/'):
+                    continue
+                
                 # Sanitize entry name to prevent path traversal
                 safe_name = sanitize_filename(entry_name)
                 if not safe_name:
                     continue
                 
-                # Build safe extraction path
-                extract_path = os.path.join(extract_to, safe_name)
+                # Build safe extraction path (preserve subdirectory structure)
+                # Handle subdirectories safely
+                if '/' in entry_name:
+                    # Extract subdirectory structure safely
+                    parts = entry_name.split('/')
+                    safe_parts = [sanitize_filename(part) for part in parts if part]
+                    if not all(safe_parts):
+                        continue
+                    extract_path = os.path.join(extract_to, *safe_parts)
+                else:
+                    extract_path = os.path.join(extract_to, safe_name)
                 
                 # Ensure we're extracting within the temp directory
                 extract_path = os.path.normpath(extract_path)
                 if not extract_path.startswith(os.path.normpath(extract_to)):
                     continue  # Skip entries that try to escape
                 
+                # Create parent directories if needed
+                os.makedirs(os.path.dirname(extract_path), exist_ok=True)
+                
                 # Extract file
                 zip_ref.extract(entry_info, extract_to)
                 
-                # Check if this is the chat file
-                if entry_name.lower().endswith('_chat.txt'):
-                    chat_file_path = extract_path
+                # Collect all .txt files for analysis
+                if entry_name.lower().endswith('.txt') and os.path.exists(extract_path):
+                    txt_files.append(extract_path)
         
-        return (None, chat_file_path)
+        if not txt_files:
+            return ("No .txt files found in ZIP after extraction", None)
+        
+        # Priority order for finding chat file:
+        # 1. Files named *_chat.txt (iOS format)
+        # 2. Files that contain WhatsApp chat format (content check)
+        # 3. Largest .txt file (often the chat file)
+        # 4. First .txt file found
+        
+        # Priority 1: Look for *_chat.txt files first
+        chat_named_files = [f for f in txt_files if '_chat.txt' in os.path.basename(f).lower()]
+        if chat_named_files:
+            # If multiple, prefer the one with WhatsApp format
+            for f in chat_named_files:
+                if is_whatsapp_chat_file(f):
+                    return (None, f)
+            # If none match format, return the first one
+            return (None, chat_named_files[0])
+        
+        # Priority 2: Check content for WhatsApp format
+        for txt_file in txt_files:
+            if is_whatsapp_chat_file(txt_file):
+                return (None, txt_file)
+        
+        # Priority 3: Return largest .txt file (usually the chat file)
+        txt_files_with_size = [(f, os.path.getsize(f)) for f in txt_files]
+        txt_files_with_size.sort(key=lambda x: x[1], reverse=True)
+        if txt_files_with_size:
+            return (None, txt_files_with_size[0][0])
+        
+        # Priority 4: Fallback to first file
+        return (None, txt_files[0])
         
     except Exception as e:
         return (f"Error extracting ZIP file: {str(e)}", None)
+
 
 

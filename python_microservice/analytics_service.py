@@ -27,7 +27,8 @@ from security_validator import (
     validate_file_upload, 
     safe_extract_zip, 
     sanitize_text_input,
-    is_valid_filename
+    is_valid_filename,
+    is_whatsapp_chat_file
 )
 
 # Add stats_computation directory to Python path to import parser
@@ -159,9 +160,9 @@ def handle_all_exceptions(e):
         )
 
 # ============================================================
-# EPHEMERAL RAG CACHE (TTL = 10 minutes)
+# EPHEMERAL RAG CACHE (TTL = 20 minutes)
 # ============================================================
-RAG_CACHE_TTL = 600  # 10 minutes in seconds
+RAG_CACHE_TTL = 1200  # 20 minutes in seconds
 rag_cache = TTLCache(maxsize=100, ttl=RAG_CACHE_TTL)
 rag_cache_lock = Lock()
 
@@ -250,7 +251,7 @@ def get_rag_session(session_id):
 @app.route("/rag/upload", methods=["POST"])
 @limiter.limit("50 per hour")  # Relaxed for file uploads
 def rag_upload():
-    """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 10 minutes."""
+    """Upload a chat file (ZIP or TXT) for ephemeral RAG. Returns session_id valid for 20 minutes."""
     try:
         file = request.files.get("file")
         if file is None:
@@ -329,10 +330,25 @@ def rag_upload():
                     return jsonify({"error": error_msg}), 400
                 
                 if not chat_file_path:
-                    # Fallback: find chat file
+                    # Fallback: find chat file intelligently
+                    # Priority 1: Look for *_chat.txt files (iOS format)
                     chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
                     if not chat_files:
-                        chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                        # Priority 2: Find all .txt files and check content
+                        all_txt_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                        if all_txt_files:
+                            # Find the file that looks like a WhatsApp chat
+                            for txt_file in all_txt_files:
+                                if is_whatsapp_chat_file(txt_file):
+                                    chat_files = [txt_file]
+                                    break
+                            # If no match found, use largest file (usually the chat)
+                            if not chat_files:
+                                txt_files_with_size = [(f, os.path.getsize(f)) for f in all_txt_files]
+                                txt_files_with_size.sort(key=lambda x: x[1], reverse=True)
+                                if txt_files_with_size:
+                                    chat_files = [txt_files_with_size[0][0]]
+                    
                     if not chat_files:
                         return jsonify({"error": "No chat file found in ZIP"}), 400
                     chat_file_path = chat_files[0]
@@ -342,7 +358,7 @@ def rag_upload():
             df = parser.parse_to_csv(chat_file_path)
             
             if df.empty:
-                return jsonify({"error": "No messages found in chat"}), 400
+                return jsonify({"error": "No messages found in chat. Please ensure the file contains WhatsApp chat messages in the correct format."}), 400
             
             # Create RAG session
             session_id = create_rag_session(df)
@@ -1137,10 +1153,25 @@ def analyze_zip():
                     return jsonify({"error": error_msg}), 400
                 
                 if not chat_file_path:
-                    # Fallback: find chat file
+                    # Fallback: find chat file intelligently
+                    # Priority 1: Look for *_chat.txt files (iOS format)
                     chat_files = glob.glob(os.path.join(tmpdir, "**", "*_chat.txt"), recursive=True)
                     if not chat_files:
-                        chat_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                        # Priority 2: Find all .txt files and check content
+                        all_txt_files = glob.glob(os.path.join(tmpdir, "**", "*.txt"), recursive=True)
+                        if all_txt_files:
+                            # Find the file that looks like a WhatsApp chat
+                            for txt_file in all_txt_files:
+                                if is_whatsapp_chat_file(txt_file):
+                                    chat_files = [txt_file]
+                                    break
+                            # If no match found, use largest file (usually the chat)
+                            if not chat_files:
+                                txt_files_with_size = [(f, os.path.getsize(f)) for f in all_txt_files]
+                                txt_files_with_size.sort(key=lambda x: x[1], reverse=True)
+                                if txt_files_with_size:
+                                    chat_files = [txt_files_with_size[0][0]]
+                    
                     if not chat_files:
                         return jsonify({"error": "No chat file found in ZIP"}), 400
                     chat_file_path = chat_files[0]
@@ -1155,7 +1186,7 @@ def analyze_zip():
                 return jsonify({"error": f"Failed to parse chat file: {str(parse_error)}"}), 500
             
             if df.empty:
-                return jsonify({"error": "No messages found in chat file"}), 400
+                return jsonify({"error": "No messages found in chat file. Please ensure the file contains WhatsApp chat messages in the correct format."}), 400
 
             # Compute basic statistics
             total_messages = int(len(df))  # Ensure Python int

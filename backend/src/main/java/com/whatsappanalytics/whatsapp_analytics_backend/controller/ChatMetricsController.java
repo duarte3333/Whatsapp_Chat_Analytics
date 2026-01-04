@@ -52,6 +52,7 @@ public class ChatMetricsController {
             // Validate file (checks size, type, and ZIP contents if ZIP)
             String validationError = validateChatFile(file);
             if (validationError != null) {
+                log.error("File validation failed: {}", validationError);
                 return ResponseEntity.badRequest().body(Map.of("error", validationError));
             }
 

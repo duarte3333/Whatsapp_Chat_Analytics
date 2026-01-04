@@ -65,6 +65,7 @@ public class SecurityValidator {
 
     /**
      * Validate filename for path traversal and dangerous characters
+     * Note: Allows common characters found in WhatsApp export filenames (spaces, hyphens, etc.)
      */
     public static boolean isValidFilename(String filename) {
         if (filename == null || filename.isEmpty()) {
@@ -78,8 +79,13 @@ public class SecurityValidator {
             return false;
         }
 
-        // Check for dangerous characters
+        // Check for dangerous characters (but allow common ones like spaces, hyphens, parentheses)
+        // WhatsApp exports often have names like "WhatsApp Chat - Group Name.zip"
         for (String pattern : DANGEROUS_PATTERNS) {
+            // Skip colon (:) check for filenames - it's only dangerous in paths
+            if (pattern.equals(":")) {
+                continue;
+            }
             if (filename.contains(pattern)) {
                 return false;
             }
@@ -129,8 +135,8 @@ public class SecurityValidator {
                     }
                 }
 
-                // Check for _chat.txt file
-                if (lowerEntryName.endsWith("_chat.txt")) {
+                // Check for any .txt file (prefer _chat.txt but accept any .txt)
+                if (lowerEntryName.endsWith(".txt")) {
                     hasChatFile = true;
                 }
 

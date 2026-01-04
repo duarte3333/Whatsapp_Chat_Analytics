@@ -121,14 +121,18 @@ public class ShareController {
      */
     @GetMapping("/shared/{token}")
     public ResponseEntity<?> getSharedStats(@PathVariable String token) {
+        log.info("===== GET SHARED STATS REQUEST =====");
+        log.info("Token: {}", token);
+        log.info("Request URI: /shared/{}", token);
         try {
             Map<String, Object> stats = shareLinkService.getSharedStats(token);
+            log.info("Successfully retrieved shared stats for token: {}", token);
             return ResponseEntity.ok(stats);
         } catch (IllegalArgumentException e) {
-            log.error("Error accessing shared stats: {}", e.getMessage());
+            log.error("Error accessing shared stats for token {}: {}", token, e.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
-            log.error("Unexpected error accessing shared stats: {}", e.getMessage(), e);
+            log.error("Unexpected error accessing shared stats for token {}: {}", token, e.getMessage(), e);
             return ResponseEntity.internalServerError().body(Map.of("error", "Failed to retrieve shared stats"));
         }
     }
